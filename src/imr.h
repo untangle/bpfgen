@@ -8,7 +8,6 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
-#include <jansson.h>
 
 #include <linux/bpf.h>
 #include <linux/filter.h>
@@ -149,12 +148,9 @@ struct imr_state {
 };
 
 //Function declaration
-json_t *read_bpf_file(void);
-struct imr_state *imr_ruleset_read(json_t *bpf_settings);
 struct imr_state *imr_state_alloc(void);
 void imr_state_print(FILE *fp, struct imr_state *s);
 void imr_state_free(struct imr_state *s);
 void imr_object_free(struct imr_object *o);
-int imr_do_bpf(struct imr_state *s);
 
 #endif

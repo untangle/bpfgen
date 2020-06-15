@@ -6,7 +6,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 
-#include "imr.h"
+#include "imrManager.h"
 
 static int seq; 
 
