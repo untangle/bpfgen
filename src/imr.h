@@ -13,9 +13,6 @@
 #include <linux/filter.h>
 #include <linux/if_ether.h>
 
-#include "bpfload.h"
-#include "bpf_insn.h"
-
 /* Type of imr_object */
 enum imr_obj_type {
 	IMR_OBJ_TYPE_VERDICT = 0,
