@@ -134,7 +134,7 @@ int imr_do_bpf(struct imr_state *s)
 		return ret;
 
 	//HERE select interface 
-	bprog.ifindex = 5;
+	bprog.ifindex = 1;
 
 	//Commit the bpf program into a fd to be loaded 
 	ret = bpfprog_commit(&bprog);
