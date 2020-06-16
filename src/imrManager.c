@@ -94,7 +94,7 @@ int imr_do_bpf(struct imr_state *s)
 	}
 
 	//Create bpf proglogue for bpf program 
-	ret = bpfprog_prologue(&bprog);
+	/*ret = bpfprog_prologue(&bprog);
 	if (ret < 0)
 		return ret;
 
@@ -126,7 +126,7 @@ int imr_do_bpf(struct imr_state *s)
 	if (ret != 0) {
 		fprintf(stderr, "Error generating bpf program\n");
 		return ret;
-	}
+	}*/
 
 	//Add a bpf verdict and fail if verdict failed
 	ret = imr_jit_verdict(&bprog);

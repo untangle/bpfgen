@@ -60,15 +60,14 @@ static int bpf_prog_load(const struct bpf_prog *prog)
 	char *log;
 	int ret;
 
-	//Load the BPF program into the object 
 	attr.prog_type  = prog->type;
-	attr.insns      = bpf_ptr_to_u64(prog->img);
+	attr.insns      = (uint64_t)prog->img;
 	attr.insn_cnt   = prog->len_cur;
-	attr.license    = bpf_ptr_to_u64("GPL");
+	attr.license    = (uint64_t)("GPL");
 
 	//Set up logging for BPF 
 	log = malloc(8192);
-	attr.log_buf    = bpf_ptr_to_u64(log);
+	attr.log_buf    = (uint64_t)log;
 	attr.log_size   = 8192;
 	attr.log_level  = 1;
 
