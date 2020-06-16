@@ -14,7 +14,7 @@
 
 #include "bpfload.h"
 #include "imr.h"
-#include "bpf_insn.h"
+#include "managers/imrManagerXdp.h"
 
 json_t *read_bpf_file(void);
 struct imr_state *imr_ruleset_read(json_t *bpf_settings);

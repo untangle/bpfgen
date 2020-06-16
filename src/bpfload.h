@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <linux/bpf.h>
+
 #define div_round_up(n, d)      (((n) + (d) - 1) / (d))
 #define ARRAY_SIZE_BPF(x) (sizeof(x) / sizeof(*(x)))
 #define EMIT(ctx, x)							\
@@ -27,7 +29,6 @@ struct bpf_prog {
 
 //Function declaration
 int bpfprog_init(struct bpf_prog *bprog);
-int bpfprog_prologue(struct bpf_prog *bprog);
 int bpfprog_commit(struct bpf_prog *bprog);
 void bpfprog_destroy(struct bpf_prog *bprog);
 

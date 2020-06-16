@@ -1,5 +1,6 @@
 #include "imrManager.h"
 #include "bpfgen_configuration.h"
+#include "bpf_insn.h"
 
 /*
 	JIT an IMR rule to BPF 
@@ -10,7 +11,74 @@
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 {
-	return 1;
+	unsigned int start, end, count, len_cur;
+
+	end = state->num_objects;
+	if (i >= end)
+		return -EINVAL;
+
+	len_cur = bprog->len_cur;
+
+	/*EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
+	EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
+			   sizeof(struct ethhdr) + sizeof(struct iphdr)));
+	EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_1, BPF_REG_3, 0));
+	EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, -(int)sizeof(struct iphdr)));*/
+
+	/*start = i;
+	count = 0;
+
+	for (i = start; start < end; i++) {
+		int ret = imr_jit_object(bprog, state, state->objects[i]);
+
+		if (ret < 0) {
+			fprintf(stderr, "failed to JIT object type %d\n",  state->objects[i]->type);
+			return ret;
+		}
+
+		count++;
+
+		if (state->objects[i]->type == IMR_OBJ_TYPE_VERDICT)
+			break;
+	}
+
+	//malformed - no verdict
+	if (i == end) {
+		fprintf(stderr, "rule had no verdict, start %d end %d\n", start, end);
+		exit(1);
+	}
+
+	imr_fixup_jumps(state, len_cur);*/
+
+	count = 1;
+
+	return count;
+}
+
+/*
+	Generate the prologue for BPF program
+	@param bprog - bpf program that has image to load the prologue into 
+	@return Return code for generating prologue 
+*/
+static int imr_jit_prologue(struct bpf_prog *bprog)
+{
+	int ret = 0;
+
+	//Switch the type 
+	switch(bprog->type) 
+	{
+		//XDP layer 
+		case BPF_PROG_TYPE_XDP:
+			ret = xdp_imr_jit_prologue(bprog);
+			break;
+		//HERE: sk_buff imr_reload_skb_data
+		//bprog->type is not supported 
+		default:
+			ret = -1;
+			break;
+	}
+	
+	return ret;
 }
 
 /*
@@ -94,12 +162,12 @@ int imr_do_bpf(struct imr_state *s)
 	}
 
 	//Create bpf proglogue for bpf program 
-	ret = bpfprog_prologue(&bprog);
+	ret = imr_jit_prologue(&bprog);
 	if (ret < 0)
 		return ret;
 
 	//Don't use first four registers 
-	s->regcount = 4;
+	/*s->regcount = 4;
 
 	//JIT each object in imr_state 
 	do {
@@ -126,7 +194,7 @@ int imr_do_bpf(struct imr_state *s)
 	if (ret != 0) {
 		fprintf(stderr, "Error generating bpf program\n");
 		return ret;
-	}
+	}*/
 
 	//Add a bpf verdict and fail if verdict failed
 	ret = imr_jit_verdict(&bprog);
