@@ -56,7 +56,7 @@ static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 static int bpf_prog_load(const struct bpf_prog *prog)
 {
 	//Variable initialization 
-	union bpf_attr attr;
+	union bpf_attr attr = {};
 	char *log;
 	int ret;
 
