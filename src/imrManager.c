@@ -3,6 +3,42 @@
 #include "bpf_insn.h"
 #include "managers/common.h"
 
+static int imr_load_thoff(struct bpf_prog *bprog, int bpfreg)
+{
+	/* fetch 16bit off cb[0] */
+	EMIT(bprog, BPF_LDX_MEM(BPF_H, bpfreg, BPF_REG_1, offsetof(struct __sk_buff, cb[0])));
+	return 0;
+}
+
+static int imr_jit_obj_meta(struct bpf_prog *bprog, 
+                            struct imr_state *state, 
+							const struct imr_object *o)
+{
+	int bpf_reg = imr_register_get(state, o->len);
+	int bpf_width = bpf_reg_width(o->len);
+	int ret;
+
+	switch (o->meta.key) {
+	case IMR_META_NFMARK:
+		EMIT(bprog, BPF_LDX_MEM(bpf_width, bpf_reg, BPF_REG_1,
+					 offsetof(struct __sk_buff, mark)));
+		break;
+	case IMR_META_L4PROTO:
+		ret = imr_load_thoff(bprog, bpf_reg);
+		if (ret < 0)
+			return ret;
+
+		EMIT(bprog, BPF_JMP_IMM(BPF_JEQ, bpf_reg, 0, 0)); // th == 0? L4PROTO undefined. 
+		EMIT(bprog, BPF_LDX_MEM(bpf_width, bpf_reg, BPF_REG_1,
+					 offsetof(struct __sk_buff, cb[1])));
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static int imr_jit_obj_immediate(struct bpf_prog *bprog,
 								 struct imr_state *s,
 				                 const struct imr_object *o)
@@ -85,7 +121,8 @@ static int imr_jit_object(struct bpf_prog *bprog,
 		return imr_jit_obj_immediate(bprog, s, o);
 	case IMR_OBJ_TYPE_ALU:
 		return imr_jit_obj_alu(bprog, s, o);
-	//HERE: META and others
+	case IMR_OBJ_TYPE_META:
+		return imr_jit_obj_meta(bprog, s, o);
 	}
 
 	return -EINVAL;
