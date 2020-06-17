@@ -148,3 +148,69 @@ int xdp_imr_jit_prologue(struct bpf_prog *bprog)
 
     return 0;
 }
+
+int xdp_imr_jit_obj_verdict(int imr_verdict)
+{
+	int verdict; 
+
+	switch (imr_verdict) {
+	case IMR_VERDICT_NEXT: /* no-op: continue with next rule */
+		return 0;
+	case IMR_VERDICT_NONE:
+	case IMR_VERDICT_PASS:
+		verdict = XDP_PASS;
+		break;
+	case IMR_VERDICT_DROP:
+		verdict = XDP_DROP;
+		break;
+	default:
+		fprintf(stderr, "unhandled verdict");
+		exit(EXIT_FAILURE);
+	}
+
+	return verdict;
+}
+
+int xdp_imr_jit_obj_payload(struct bpf_prog *bprog, 
+                            const struct imr_state *state, 
+                            const struct imr_object *o) {
+	int base = o->payload.base;
+	int offset;
+	int bpf_width, bpf_reg;
+
+	offset = o->payload.offset;
+
+	switch (base) {
+	case IMR_PAYLOAD_BASE_LL:
+	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
+                    -(int)sizeof(struct ethhdr)));
+		break;
+	case IMR_PAYLOAD_BASE_NH:
+		break;
+	case IMR_PAYLOAD_BASE_TH:
+		/* XXX: ip options */
+		offset += sizeof(struct iphdr);
+		break;
+	}
+
+	bpf_width = bpf_reg_width(o->len);
+	bpf_reg = imr_register_get(state, o->len);
+
+	//fprintf(stderr, "store payload in bpf reg %d\n", bpf_reg);
+    EMIT(bprog, BPF_LDX_MEM(bpf_width, bpf_reg, BPF_REG_1, offset));
+
+	switch (base) {
+	case IMR_PAYLOAD_BASE_LL:
+	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
+					(int)sizeof(struct ethhdr)));
+		break;
+	case IMR_PAYLOAD_BASE_NH:
+		break;
+	case IMR_PAYLOAD_BASE_TH:
+	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
+					-(int)sizeof(struct iphdr)));
+		break;
+	}
+
+	return 0;
+}
