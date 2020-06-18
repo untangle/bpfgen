@@ -160,6 +160,7 @@ struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t of
 struct imr_object *imr_object_alloc_verdict(enum imr_verdict v);
 struct imr_object *imr_object_alloc_imm64(uint64_t value);
 struct imr_object *imr_object_alloc_imm32(uint32_t value);
+int imr_state_add_obj(struct imr_state *s, struct imr_object *o);
 
 //Register operations 
 unsigned int imr_regs_needed(unsigned int len);

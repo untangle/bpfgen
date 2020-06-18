@@ -8,11 +8,11 @@
 static const char *type_to_str(enum imr_obj_type t)
 {
 	switch (t) {
-	case IMR_OBJ_TYPE_VERDICT: return "verdict";
-	case IMR_OBJ_TYPE_IMMEDIATE: return "imm";
-	case IMR_OBJ_TYPE_PAYLOAD: return "payload";
-	case IMR_OBJ_TYPE_ALU: return "alu";
-	case IMR_OBJ_TYPE_META: return "meta";
+	case IMR_OBJ_TYPE_VERDICT: return "VERDICT: ";
+	case IMR_OBJ_TYPE_IMMEDIATE: return "IMM: ";
+	case IMR_OBJ_TYPE_PAYLOAD: return "PAYLOAD: ";
+	case IMR_OBJ_TYPE_ALU: return "ALU: ";
+	case IMR_OBJ_TYPE_META: return "META: ";
 	}
 
 	return "unknown";
@@ -105,23 +105,29 @@ static int imr_object_print_imm(FILE *fp, const struct imr_object *o)
 	@param o - imr_object to print 
 	@return Cumulative return code of all the prints to determine if a failure occured
 */
-static int imr_object_print(FILE *fp, const struct imr_object *o)
+static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 {
 	//Variable init
 	int ret = 0;
 	int total = 0; //Track how many objects are printed 
+	int i;
 
 	//Print out type 
+	for (i = 0; i < depth; i++) {
+		ret = fprintf(fp, "\t");
+		if (ret < 0)
+			return ret;
+	}
+
 	ret = fprintf(fp, "%s", type_to_str(o->type));
 	if (ret < 0)
 		return ret;
-	total += ret;
 
 	//Call right function based on object type 
 	switch (o->type) {
 	case IMR_OBJ_TYPE_VERDICT:
 		//Verdict 
-		ret = fprintf(fp, "(%s)", verdict_to_str(o->verdict.verdict));
+		ret = fprintf(fp, "%s", verdict_to_str(o->verdict.verdict));
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -149,8 +155,9 @@ static int imr_object_print(FILE *fp, const struct imr_object *o)
 		break;
 	case IMR_OBJ_TYPE_ALU:
 		//ALU
+		++depth;
 		//Start of print 
-		ret = fprintf(fp, "(");
+		ret = fprintf(fp, "\n");
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -158,32 +165,30 @@ static int imr_object_print(FILE *fp, const struct imr_object *o)
 		total += ret;
 
 		//Print left alu object 
-		ret = imr_object_print(fp, o->alu.left);
+		ret = imr_object_print(fp, depth, o->alu.left);
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
 		total += ret;
 
 		//Print ALU op 
-		ret = fprintf(fp , " %s ", alu_op_to_str(o->alu.op));
+		for (i = 0; i < depth; i++)
+			fprintf(fp, "\n\t");
+		ret = fprintf(fp , "op: %s \n", alu_op_to_str(o->alu.op));
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
 		total += ret;
 
 		//Print ALU right object 
-		ret = imr_object_print(fp, o->alu.right);
+		ret = imr_object_print(fp, depth, o->alu.right);
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
 		total += ret;
 
 		//Print ALU ending 
-		ret = fprintf(fp, ") ");
-		//Don't add to total if print failed, otherwise add to total
-		if (ret < 0)
-			break;
-		total += ret;
+		--depth;
 		break;
 	case IMR_OBJ_TYPE_META:
 		//Meta 
@@ -219,7 +224,7 @@ void imr_state_print(FILE *fp, struct imr_state *s)
 
 	//Print out each object in state 
 	for (i = 0; i < s->num_objects; i++) {
-		imr_object_print(fp, s->objects[i]);
+		imr_object_print(fp, 0, s->objects[i]);
 		putc('\n', fp);
 	}
 }
