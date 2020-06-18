@@ -251,6 +251,47 @@ void imr_state_free(struct imr_state *s)
 	free(s);
 }
 
+struct imr_object *imr_object_copy(const struct imr_object *old)
+{
+	struct imr_object *o = imr_object_alloc(old->type);
+
+	if (!o)
+		return NULL;
+
+	switch (o->type) {
+	case IMR_OBJ_TYPE_VERDICT:
+	case IMR_OBJ_TYPE_IMMEDIATE:
+	case IMR_OBJ_TYPE_PAYLOAD:
+	case IMR_OBJ_TYPE_META:
+		memcpy(o, old, sizeof(*o));
+		o->refcnt = 1;
+		break;
+	case IMR_OBJ_TYPE_ALU:
+		o->alu.left = imr_object_copy(old->alu.left);
+		o->alu.right = imr_object_copy(old->alu.right);
+		if (!o->alu.left || !o->alu.right) {
+			imr_object_free(o);
+			return NULL;
+		}
+		break;
+	}
+
+	o->len = old->len;
+	return o;
+}
+
+struct imr_object *imr_object_alloc(enum imr_obj_type t)
+{
+	struct imr_object *o = calloc(1, sizeof(*o));
+
+	if (!o)
+		return NULL;
+
+	o->refcnt = 1;
+	o->type = t;
+	return o;
+}
+
 /*
 	Free the imr_object 
 	@param o - imr_object to free 
@@ -289,4 +330,128 @@ void imr_object_free(struct imr_object *o)
 
 	//Free final object 
 	free(o);
+}
+
+struct imr_object *imr_object_split64(struct imr_object *to_split)
+{
+	struct imr_object *o = NULL;
+
+	if (to_split->len < sizeof(uint64_t)) {
+		fprintf(stderr, "bogus split of size <= uint64_t");
+		exit(EXIT_FAILURE);
+	}
+
+	to_split->len -= sizeof(uint64_t);
+
+	switch (to_split->type) {
+	case IMR_OBJ_TYPE_IMMEDIATE: {
+		uint64_t tmp;
+
+		o = imr_object_copy(to_split);
+		o->imm.value64 = to_split->imm.value_large[0];
+
+		switch (to_split->len) {
+		case 0:
+			break;
+		case sizeof(uint32_t):
+			tmp = to_split->imm.value_large[1];
+			to_split->imm.value32 = tmp;
+			break;
+		case sizeof(uint64_t):
+			tmp = to_split->imm.value_large[1];
+			to_split->imm.value64 = tmp;
+			break;
+		default:
+			memmove(to_split->imm.value_large, &to_split->imm.value_large[1],
+				sizeof(to_split->imm.value_large) - sizeof(to_split->imm.value_large[0]));
+			break;
+		}
+		}
+		break;
+	case IMR_OBJ_TYPE_PAYLOAD:
+		o = imr_object_copy(to_split);
+		to_split->payload.offset += sizeof(uint64_t);
+		break;
+	case IMR_OBJ_TYPE_META:
+		fprintf(stderr, "can't split meta");
+		exit(EXIT_FAILURE);
+		break;
+	case IMR_OBJ_TYPE_ALU:
+		o = imr_object_alloc(to_split->type);
+		o->alu.left = imr_object_split64(to_split->alu.left);
+		o->alu.right = imr_object_split64(to_split->alu.right);
+
+		if (!o->alu.left || !o->alu.right) {
+			imr_object_free(o);
+			return NULL; /* Can't recover */
+
+		}
+		break;
+	case IMR_OBJ_TYPE_VERDICT:
+		fprintf(stderr, "can't split type");
+		exit(EXIT_FAILURE);
+	}
+
+	if (o)
+		o->len = sizeof(uint64_t);
+	return o;
+}
+
+//REGISTER OPERATIONS
+unsigned int imr_regs_needed(unsigned int len)
+{
+	return div_round_up(len, sizeof(uint64_t));
+}
+
+int imr_register_get(const struct imr_state *s, uint32_t len)
+{
+	unsigned int regs_needed = imr_regs_needed(len);
+
+	if (s->regcount < regs_needed) {
+		fprintf(stderr, "not enough registers in use");
+		exit(EXIT_FAILURE);
+	}
+
+	return s->regcount - regs_needed;
+}
+
+int bpf_reg_width(unsigned int len)
+{
+	switch (len) {
+	case sizeof(uint8_t): return BPF_B;
+	case sizeof(uint16_t): return BPF_H;
+	case sizeof(uint32_t): return BPF_W;
+	case sizeof(uint64_t): return BPF_DW;
+	default:
+		fprintf(stderr, "reg size not supported");
+		exit(EXIT_FAILURE);
+	}
+
+	return -EINVAL;
+}
+
+int imr_register_alloc(struct imr_state *s, uint32_t len)
+{
+	unsigned int regs_needed = imr_regs_needed(len);
+	uint8_t reg = s->regcount;
+
+	if (s->regcount + regs_needed >= IMR_REG_COUNT) {
+		fprintf(stderr, "out of BPF registers");
+		return -1;
+	}
+
+	s->regcount += regs_needed;
+
+	return reg;
+}
+
+void imr_register_release(struct imr_state *s, uint32_t len)
+{
+	unsigned int regs_needed = imr_regs_needed(len);
+
+	if (s->regcount < regs_needed) {
+		fprintf(stderr, "regcount underflow");
+		exit(EXIT_FAILURE);
+	}
+	s->regcount -= regs_needed;
 }

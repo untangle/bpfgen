@@ -13,6 +13,8 @@
 #include <linux/filter.h>
 #include <linux/if_ether.h>
 
+#include "common.h"
+
 /* Type of imr_object */
 enum imr_obj_type {
 	IMR_OBJ_TYPE_VERDICT = 0,
@@ -150,4 +152,14 @@ void imr_state_print(FILE *fp, struct imr_state *s);
 void imr_state_free(struct imr_state *s);
 void imr_object_free(struct imr_object *o);
 
+struct imr_object *imr_object_copy(const struct imr_object *old);
+struct imr_object *imr_object_alloc(enum imr_obj_type t); 
+struct imr_object *imr_object_split64(struct imr_object *to_split);
+
+//Register operations 
+unsigned int imr_regs_needed(unsigned int len);
+int imr_register_get(const struct imr_state *s, uint32_t len);
+int bpf_reg_width(unsigned int len);
+int imr_register_alloc(struct imr_state *s, uint32_t len);
+void imr_register_release(struct imr_state *s, uint32_t len);
 #endif
