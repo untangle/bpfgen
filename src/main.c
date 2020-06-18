@@ -40,7 +40,8 @@ static int sdwan2bpf(void)
 	json_decref(bpf_settings);
 
 	//Translate IMR to BPF and load BPF program
-	ret = imr_do_bpf(state);
+	//ret = imr_do_bpf(state);
+	ret = 0;
 
 	//Free memory
 	imr_state_free(state);
