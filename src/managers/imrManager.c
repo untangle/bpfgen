@@ -1,6 +1,7 @@
 #include "imrManager.h"
 #include "../bpfgen_configuration.h"
 #include "../bpf_insn.h"
+#include "../test/bpfgen_bootstrap.h"
 
 /*
 	JIT a verdict to BPF 
@@ -128,66 +129,6 @@ static int alu_jmp_get_negated_bpf_opcode(enum imr_alu_op op)
 	return -EINVAL;
 }
 
-static int __imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
-	            struct imr_state *state,
-			    const struct imr_object *o,
-				int regl)
-{
-	const struct imr_object *right;
-	enum imr_reg_num regr;
-	int op, ret;
-
-	right = o->alu.right;
-
-	op = alu_jmp_get_negated_bpf_opcode(o->alu.op);
-
-	/* avoid 2nd register if possible */
-	if (right->type == IMR_OBJ_TYPE_IMMEDIATE) {
-		switch (right->len) {
-		case sizeof(uint32_t):
-			EMIT(bprog, BPF_JMP_IMM(op, regl, right->imm.value32, 0));
-			return 0;
-		}
-	}
-
-	regr = imr_register_alloc(state, right->len);
-	if (regr < 0)
-		return -ENOSPC;
-
-	ret = imr_jit_object(bprog, state, right);
-	if (ret == 0) {
-		EMIT(bprog, BPF_MOV32_IMM(BPF_REG_0, -2)); /* NFT_BREAK */
-		EMIT(bprog, BPF_JMP_REG(op, regl, regr, 0));
-	}
-
-	imr_register_release(state, right->len);
-	return ret;
-}
-
-static int imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
-	               struct imr_state *state,
-			       const struct imr_object *o,
-			       int regl)
-
-{
-	int ret;
-
-	/* multiple tests on same source? */
-	if (o->alu.left->type == IMR_OBJ_TYPE_ALU) {
-		ret = imr_jit_obj_alu_jmp(bprog, state, o->alu.left, regl);
-		if (ret < 0)
-			return ret;
-	} else {
-		ret = imr_jit_object(bprog, state, o->alu.left);
-		if (ret < 0)
-			return ret;
-	}
-
-	ret = __imr_jit_obj_alu_jmp(bprog, state, o, regl);
-
-	return ret;
-}
-
 static int imr_jit_memcmp_sub64(struct bpf_prog *bprog,
 	              struct imr_state *state,
 				  struct imr_object *sub,
@@ -297,6 +238,65 @@ static int imr_jit_alu_bigcmp(struct bpf_prog *bprog, struct imr_state *state, c
 	return 0;
 }
 
+static int __imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
+	            struct imr_state *state,
+			    const struct imr_object *o,
+				int regl)
+{
+	const struct imr_object *right;
+	enum imr_reg_num regr;
+	int op, ret;
+
+	right = o->alu.right;
+
+	op = alu_jmp_get_negated_bpf_opcode(o->alu.op);
+
+	/* avoid 2nd register if possible */
+	if (right->type == IMR_OBJ_TYPE_IMMEDIATE) {
+		switch (right->len) {
+		case sizeof(uint32_t):
+			EMIT(bprog, BPF_JMP_IMM(op, regl, right->imm.value32, 0));
+			return 0;
+		}
+	}
+
+	regr = imr_register_alloc(state, right->len);
+	if (regr < 0)
+		return -ENOSPC;
+
+	ret = imr_jit_object(bprog, state, right);
+	if (ret == 0) {
+		EMIT(bprog, BPF_JMP_REG(op, regl, regr, 0));
+	}
+
+	imr_register_release(state, right->len);
+	return ret;
+}
+
+static int imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
+	               struct imr_state *state,
+			       const struct imr_object *o,
+			       int regl)
+
+{
+	int ret;
+
+	// multiple tests on same source? 
+	if (o->alu.left->type == IMR_OBJ_TYPE_ALU) {
+		ret = imr_jit_obj_alu_jmp(bprog, state, o->alu.left, regl);
+		if (ret < 0)
+			return ret;
+	} else {
+		ret = imr_jit_object(bprog, state, o->alu.left);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = __imr_jit_obj_alu_jmp(bprog, state, o, regl);
+
+	return ret;
+}
+
 static int imr_jit_obj_alu(struct bpf_prog *bprog, struct imr_state *state, const struct imr_object *o)
 {
 	const struct imr_object *right;
@@ -399,10 +399,10 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 	//malformed - no verdict
 	if (i == end) {
 		fprintf(stderr, "rule had no verdict, start %d end %d\n", start, end);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
-	//imr_fixup_jumps(state, len_cur);
+	imr_fixup_jumps(bprog, len_cur);
 
 	return count;
 }
@@ -478,7 +478,7 @@ json_t *read_bpf_file(void) {
 	@return The imr_state that represents a structure of the rules 
 			so json doesn't have to be reparsed
 */
-struct imr_state *imr_ruleset_read(json_t *bpf_settings)
+struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap)
 {
 	//Variable definition 
 	struct imr_state *state; 
@@ -495,7 +495,9 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings)
 	if (!state)
 		return NULL;
 
-	//HERE: read in bpf settings into IMR
+	if (run_bootstrap) {
+		fill_imr(state);
+	}
 
 	//Print out function
 	imr_state_print(stdout, state);

@@ -131,12 +131,12 @@ struct imr_state {
 	 *
 	 * Access >= headlen will need to go through skb_header_pointer().
 	 */
-	uint8_t		headlen;
+	uint8_t		headlen; //TAKEOUT?
 
 	/* where skb->data points to at start
 	 * of program.  Usually this is IMR_PAYLOAD_BASE_NH.
 	 */
-	enum imr_payload_base base:8;
+	enum imr_payload_base base:8; //TAKEOUT?
 
 	/* hints to emitter */
 	bool reload_r2;
@@ -155,6 +155,11 @@ void imr_object_free(struct imr_object *o);
 struct imr_object *imr_object_copy(const struct imr_object *old);
 struct imr_object *imr_object_alloc(enum imr_obj_type t); 
 struct imr_object *imr_object_split64(struct imr_object *to_split);
+struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l, struct imr_object *r);
+struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t off, uint16_t len);
+struct imr_object *imr_object_alloc_verdict(enum imr_verdict v);
+struct imr_object *imr_object_alloc_imm64(uint64_t value);
+struct imr_object *imr_object_alloc_imm32(uint32_t value);
 
 //Register operations 
 unsigned int imr_regs_needed(unsigned int len);

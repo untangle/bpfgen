@@ -74,3 +74,4 @@ configure
 autoscan.log
 nf_tables_jit/
 bpfgen_examples/
+.dirstamp

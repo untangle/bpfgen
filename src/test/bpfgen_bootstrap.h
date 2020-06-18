@@ -2,6 +2,6 @@
 #define BPFGEN_BOOTSTRAP_H
 #include "../imr.h"
 
-void fill_imr(struct imr_state *state);
+int fill_imr(struct imr_state *state);
 
 #endif

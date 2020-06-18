@@ -280,6 +280,28 @@ struct imr_object *imr_object_copy(const struct imr_object *old)
 	return o;
 }
 
+int imr_state_add_obj(struct imr_state *s, struct imr_object *o)
+{
+	struct imr_object **new;
+	uint32_t slot = s->num_objects;
+
+	if (s->num_objects >= INT_MAX / sizeof(*o))
+		return -1;
+
+	s->num_objects++;
+	new = realloc(s->objects, sizeof(o) * s->num_objects);
+	if (!new) {
+		imr_object_free(o);
+		return -1;
+	}
+
+	new[slot] = o;
+	if (new != s->objects)
+		s->objects = new;
+
+	return 0;
+}
+
 struct imr_object *imr_object_alloc(enum imr_obj_type t)
 {
 	struct imr_object *o = calloc(1, sizeof(*o));
@@ -289,6 +311,93 @@ struct imr_object *imr_object_alloc(enum imr_obj_type t)
 
 	o->refcnt = 1;
 	o->type = t;
+	return o;
+}
+
+struct imr_object *imr_object_alloc_imm32(uint32_t value)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_IMMEDIATE);
+
+	if (o) {
+		o->imm.value32 = value;
+		o->len = sizeof(value);
+	}
+	return o;
+}
+
+struct imr_object *imr_object_alloc_imm64(uint64_t value)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_IMMEDIATE);
+
+	if (o) {
+		o->imm.value64 = value;
+		o->len = sizeof(value);
+	}
+	return o;
+}
+
+struct imr_object *imr_object_alloc_verdict(enum imr_verdict v)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_VERDICT);
+
+	if (!o)
+		return NULL;
+
+	o->verdict.verdict = v;
+	o->len = sizeof(v);
+
+	return o;
+}
+
+struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t off, uint16_t len)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_PAYLOAD);
+
+	if (!o)
+		return NULL;
+
+	o->payload.base = b;
+	o->payload.offset = off;
+	if (len > 16) {
+
+		return NULL;
+	}
+	if (len == 0) 
+	{
+		fprintf(stderr, "payload length is 0");
+		exit(EXIT_FAILURE);
+	}
+	if (len > 16)
+	{
+		fprintf(stderr, "payload length exceeds 16 byte");
+		exit(EXIT_FAILURE);
+	}
+
+	o->len = len;
+
+	return o;
+}
+
+struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l, struct imr_object *r)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_ALU);
+
+	if (!o)
+		return NULL;
+
+	o->alu.op = op;
+	o->alu.left = l;
+	o->alu.right = r;
+
+	if (l->len == 0 || r->len == 0) {
+		fprintf(stderr, "alu op with 0 op length");
+		exit(EXIT_FAILURE);
+	}
+
+	o->len = l->len;
+	if (r->len > o->len)
+		o->len = r->len;
+
 	return o;
 }
 
