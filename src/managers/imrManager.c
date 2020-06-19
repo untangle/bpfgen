@@ -72,8 +72,12 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog,
 			EMIT(bprog, BPF_LDX_MEM(BPF_H, BPF_REG_1, BPF_REG_2, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, dest)));
 			break;
+		case IMR_SRC_PORT:
+			EMIT(bprog, BPF_LDX_MEM(BPF_H, BPF_REG_1, BPF_REG_2,
+				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, source)));
+			break;
 		default:
-			fprintf(stderr, "Payload type not recognized");
+			fprintf(stderr, "Payload type not recognized\n");
 			ret = -1;
 			break;
 	}
@@ -133,7 +137,7 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog,
 	}
 
 	ret = imr_jit_object(bprog, state, o->alu.left);
-	if (ret) 
+	if (ret < 0) 
 		return ret;
 
 	regl = imr_register_get(state, o->len);
@@ -162,7 +166,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr)));
-			EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_3, BPF_REG_1, 2));
+			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2));
 			break;
 		default:
 			fprintf(stderr, "Unsupported network layer");
@@ -183,7 +187,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)));
-			EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_3, BPF_REG_1, 2));
+			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2));
 			//Exit if not right transport layer
 			ret = imr_jit_verdict(bprog, bprog->verdict);
 			if (ret != 0) {
@@ -192,7 +196,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 			}
 			EMIT(bprog, BPF_LDX_MEM(BPF_B, BPF_REG_1, BPF_REG_2, sizeof(struct ethhdr) + offsetof(struct iphdr, protocol)));
 			EMIT(bprog, BPF_ALU64_IMM(BPF_AND, BPF_REG_1, 255));
-			EMIT(bprog, BPF_JMP_IMM(BPF_JNE, BPF_REG_1, IPPROTO_TCP, 2));
+			EMIT(bprog, BPF_JMP_IMM(BPF_JEQ, BPF_REG_1, IPPROTO_TCP, 2));
 			ret = imr_jit_verdict(bprog, bprog->verdict);
 			if (ret != 0) {
 				fprintf(stderr, "Failure to JIT transport layer verdict");
@@ -332,7 +336,7 @@ json_t *read_bpf_file(void) {
 	@return The imr_state that represents a structure of the rules 
 			so json doesn't have to be reparsed
 */
-struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap)
+struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int test_to_run)
 {
 	//Variable definition 
 	struct imr_state *state; 
@@ -350,11 +354,14 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap)
 		return NULL;
 
 	if (run_bootstrap) {
-		fill_imr(state);
+		int ret = fill_imr(state, test_to_run);
+		if (ret != 0)
+			return NULL;
 	}
 
 	//Print out function
-	imr_state_print(stdout, state);
+	if (!run_bootstrap)
+		imr_state_print(stdout, state);
 
 	return state;
 }
@@ -384,7 +391,7 @@ int imr_do_bpf(struct imr_state *s)
 	if (s->num_objects > 0)
 	{
 		//Don't use first four registers 
-		s->regcount = 4;
+		s->regcount = 2;
 
 		//JIT each object in imr_state 
 		do {
@@ -420,7 +427,7 @@ int imr_do_bpf(struct imr_state *s)
 		return ret;
 
 	//HERE select interface 
-	bprog.ifindex = 1;
+	bprog.ifindex = 2;
 
 	//Commit the bpf program into a fd to be loaded 
 	ret = bpfprog_commit(&bprog);

@@ -63,6 +63,7 @@ enum imr_verdict {
 /* payload base types */
 enum imr_payload_base {
 	IMR_DEST_PORT = 0,
+	IMR_SRC_PORT,
 };
 
 enum link_type {

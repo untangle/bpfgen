@@ -23,7 +23,7 @@ int imr_jit_object(struct bpf_prog *bprog,
 			  struct imr_state *s,
 			  const struct imr_object *o);
 json_t *read_bpf_file(void);
-struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap);
+struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int test_to_run);
 int imr_do_bpf(struct imr_state *s);
 
 #endif

@@ -16,7 +16,7 @@ static int seq;
 	Read in the bpf configuration file, translate it to the IMR, and load the IMR BPF program. 
 	@return The return code after doing translation to IMR and loading the BPF program
 */
-static int sdwan2bpf(int run_bootstrap)
+static int sdwan2bpf(int run_bootstrap, int test_to_run)
 {
 	//Initialize variables 
 	json_t *bpf_settings;
@@ -32,7 +32,7 @@ static int sdwan2bpf(int run_bootstrap)
 	}
 
 	//Read in ruleset from the file descriptor 
-	state = imr_ruleset_read(bpf_settings, run_bootstrap);
+	state = imr_ruleset_read(bpf_settings, run_bootstrap, test_to_run);
 	if (state == NULL) {
 		perror("ruleset_read: ");
 		exit(EXIT_FAILURE);
@@ -42,9 +42,7 @@ static int sdwan2bpf(int run_bootstrap)
 	json_decref(bpf_settings);
 
 	//Translate IMR to BPF and load BPF program
-	//ret = 0;
-	//if (!run_bootstrap)
-		ret = imr_do_bpf(state);
+	ret = imr_do_bpf(state);
 
 	//Free memory
 	imr_state_free(state);
@@ -56,15 +54,17 @@ static int sdwan2bpf(int run_bootstrap)
 int main(int argc, char *argv[])
 {
 	int run_bootstrap = 0;
+	int test_to_run = 0;
 
 	//Run getopt if arguments passed to bpfgen
 	if (argc >= 2) {
 		int opt;
-		while ((opt = getopt(argc, argv, "t")) != -1) {
+		while ((opt = getopt(argc, argv, "t:")) != -1) {
 			switch(opt){
 				case 't':
-					fprintf(stdout, "Running bootstrap\n");
 					run_bootstrap = 1;
+					test_to_run = atoi(optarg);
+					fprintf(stdout, "Running bootstrap\n");
 					break;
 				default:
 					fprintf(stderr, "Not sure what you're looking for there, sir\n");
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
 
 	//Main function to translate and load bpf program
 	int ret; // return code
-	ret = sdwan2bpf(run_bootstrap);
+	ret = sdwan2bpf(run_bootstrap, test_to_run);
 
 	//free memory
 	//fclose (log_file);

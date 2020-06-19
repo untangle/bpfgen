@@ -79,6 +79,7 @@ static const char *payload_base_to_str(enum imr_payload_base p)
 {
 	switch(p) {
 		case IMR_DEST_PORT: return "destination port";
+		case IMR_SRC_PORT:  return "source port";
 	}
 
 	return "invalid";

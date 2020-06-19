@@ -2,6 +2,8 @@
 #define BPFGEN_BOOTSTRAP_H
 #include "../imr.h"
 
-int fill_imr(struct imr_state *state);
+#include <arpa/inet.h>
+
+int fill_imr(struct imr_state *state, int test_to_run);
 
 #endif
