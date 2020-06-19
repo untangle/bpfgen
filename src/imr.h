@@ -52,12 +52,6 @@ enum imr_alu_op {
 	IMR_ALU_OP_LSHIFT,
 };
 
-/* imr relop enum */
-enum imr_relop {
-	IMR_RELOP_EQ = 0,
-	IMR_RELOP_NE,
-};
-
 /* imr verdicts */
 enum imr_verdict {
 	IMR_VERDICT_NONE = 0,	/* partially translated rule, no verdict */
@@ -68,10 +62,19 @@ enum imr_verdict {
 
 /* payload base types */
 enum imr_payload_base {
-	IMR_PAYLOAD_BASE_INVALID = 0,
-	IMR_PAYLOAD_BASE_LL,
-	IMR_PAYLOAD_BASE_NH,
-	IMR_PAYLOAD_BASE_TH,
+	IMR_DEST_PORT = 0,
+};
+
+enum link_type {
+	LINK_ETHERNET = 0,
+};
+
+enum network_type {
+	NETWORK_IP4 = 0,
+};
+
+enum transport_type {
+	TRANSPORT_TCP = 0,
 };
 
 /* imr meta keys */
@@ -99,7 +102,6 @@ struct imr_object {
 		} imm; 
 		//For payload types 
 		struct {
-			uint16_t offset;
 			enum imr_payload_base base:8;
 		} payload;
 		//For verdict types 
@@ -121,25 +123,12 @@ struct imr_object {
 
 /* imr_state struct */
 struct imr_state {
-	uint32_t    len_cur;     //Length of imr_state currently
-	uint16_t	num_objects; //Number of objects 
-	uint8_t		nfproto;     //?
-	uint8_t		regcount;    //Register count 
-
-	/* payload access <= headlen will use direct skb->data access.
-	 * Normally set to either sizeof(iphdr) or sizeof(ipv6hdr).
-	 *
-	 * Access >= headlen will need to go through skb_header_pointer().
-	 */
-	uint8_t		headlen; //TAKEOUT?
-
-	/* where skb->data points to at start
-	 * of program.  Usually this is IMR_PAYLOAD_BASE_NH.
-	 */
-	enum imr_payload_base base:8; //TAKEOUT?
-
-	/* hints to emitter */
-	bool reload_r2;
+	uint32_t                len_cur;         //Length of imr_state currently
+	uint16_t	            num_objects;     //Number of objects 
+	uint8_t		            regcount;        //Register count 
+	enum link_type          link_layer;      //only ethernet for now 
+	enum network_type       network_layer;  //only IP for now 
+	enum transport_type     transport_layer; //only tcp for now 
 
 	struct imr_object *registers[IMR_REG_COUNT];
 
@@ -156,7 +145,7 @@ struct imr_object *imr_object_copy(const struct imr_object *old);
 struct imr_object *imr_object_alloc(enum imr_obj_type t); 
 struct imr_object *imr_object_split64(struct imr_object *to_split);
 struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l, struct imr_object *r);
-struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t off, uint16_t len);
+struct imr_object *imr_object_alloc_payload(enum imr_payload_base b);
 struct imr_object *imr_object_alloc_verdict(enum imr_verdict v);
 struct imr_object *imr_object_alloc_imm64(uint64_t value);
 struct imr_object *imr_object_alloc_imm32(uint32_t value);

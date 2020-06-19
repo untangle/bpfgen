@@ -3,6 +3,14 @@
 #include "../bpf_insn.h"
 #include "../test/bpfgen_bootstrap.h"
 
+#include <linux/filter.h>
+
+#include <linux/if_ether.h>
+typedef __u16 __bitwise __sum16; /* hack */
+#include <linux/ip.h>
+#include <arpa/inet.h>
+#include <linux/tcp.h>
+
 /*
 	JIT a verdict to BPF 
 	@param bprog - bpf program to add verdict to 
@@ -59,16 +67,16 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog,
 			       const struct imr_object *o)
 {
 	int ret = 0;
-
-	switch (bprog->type) {
-		case BPF_PROG_TYPE_XDP:
-			ret = xdp_imr_jit_obj_payload(bprog, state, o);
+	switch(o->payload.base) {
+		case IMR_DEST_PORT:
+			EMIT(bprog, BPF_LDX_MEM(BPF_H, BPF_REG_1, BPF_REG_2, 
+				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, dest)));
 			break;
 		default:
-			fprintf(stderr, "Unsupported type for payload");
-			exit(EXIT_FAILURE);
+			fprintf(stderr, "Payload type not recognized");
+			ret = -1;
+			break;
 	}
-
 	return ret;
 }
 
@@ -105,153 +113,36 @@ static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
  * to jump to end of rule ('break') on inequality, i.e.
  * 'branch if NOT equal'.
  */
-static int alu_jmp_get_negated_bpf_opcode(enum imr_alu_op op)
-{
-	switch (op) {
-	case IMR_ALU_OP_EQ:
-		return BPF_JNE;
-	case IMR_ALU_OP_NE:
-		return BPF_JEQ;
-	case IMR_ALU_OP_LT:
-		return BPF_JGE;
-	case IMR_ALU_OP_LTE:
-		return BPF_JGT;
-	case IMR_ALU_OP_GT:
-		return BPF_JLE;
-	case IMR_ALU_OP_GTE:
-		return BPF_JLT;
-	case IMR_ALU_OP_LSHIFT:
-	case IMR_ALU_OP_AND:
-		break;
-        }
-
-	fprintf(stderr, "invalid imr alu op");
-	return -EINVAL;
-}
-
-static int imr_jit_memcmp_sub64(struct bpf_prog *bprog,
-	              struct imr_state *state,
-				  struct imr_object *sub,
-				  int regl)
-{
-	int ret = imr_jit_object(bprog, state, sub->alu.left);
-	int regr = imr_register_alloc(state, sizeof(uint64_t));
-
-	if (ret < 0)
-		return ret;
-
-	ret = imr_jit_object(bprog, state, sub->alu.right);
-
-	EMIT(bprog, BPF_ALU64_REG(BPF_SUB, regl, regr));
-
-	imr_register_release(state, sizeof(uint64_t));
-	return 0;
-}
-
-static int imr_jit_memcmp_sub32(struct bpf_prog *bprog,
-	              struct imr_state *state,
-				  struct imr_object *sub,
-				  int regl)
-{
-	const struct imr_object *right = sub->alu.right;
-	int regr, ret = imr_jit_object(bprog, state, sub->alu.left);
-
-	if (right->type == IMR_OBJ_TYPE_IMMEDIATE && right->len) {
-		EMIT(bprog, BPF_ALU32_IMM(BPF_SUB, regl, right->imm.value32));
-		return 0;
-	}
-
-	regr = imr_register_alloc(state, sizeof(uint32_t));
-	if (ret < 0)
-		return ret;
-
-	ret = imr_jit_object(bprog, state, right);
-	if (ret < 0) {
-		imr_register_release(state, sizeof(uint32_t));
-		return ret;
-	}
-
-	EMIT(bprog, BPF_ALU32_REG(BPF_SUB, regl, regr));
-	return 0;
-}
-
-static int imr_jit_alu_bigcmp(struct bpf_prog *bprog, struct imr_state *state, const struct imr_object *o)
-{
-	struct imr_object *copy = imr_object_copy(o);
-	unsigned int start_insn = state->len_cur;
-	int regl, ret;
-
-	if (!copy)
-		return -ENOMEM;
-
-	regl = imr_register_alloc(state, sizeof(uint64_t));
-	do {
-		struct imr_object *tmp;
-
-		tmp = imr_object_split64(copy);
-		if (!tmp) {
-			imr_register_release(state, sizeof(uint64_t));
-			imr_object_free(copy);
-			return -ENOMEM;
-		}
-
-		ret = imr_jit_memcmp_sub64(bprog, state, tmp, regl);
-		imr_object_free(tmp);
-		if (ret < 0) {
-			imr_register_release(state, sizeof(uint64_t));
-			imr_object_free(copy);
-			return ret;
-		}
-		// XXX: 64bit 
-		EMIT(bprog, BPF_JMP_IMM(BPF_JNE, regl, 0, 0));
-	} while (copy->len >= sizeof(uint64_t));
-
-	if (copy->len && copy->len != sizeof(uint64_t)) {
-		ret = imr_jit_memcmp_sub32(bprog, state, copy, regl);
-
-		if (ret < 0) {
-			imr_object_free(copy);
-			imr_register_release(state, sizeof(uint64_t));
-			return ret;
-		}
-	}
-
-	imr_object_free(copy);
-	imr_fixup_jumps(bprog, start_insn);
-
-	switch (o->alu.op) {
-	case IMR_ALU_OP_AND:
-	case IMR_ALU_OP_LSHIFT:
-		fprintf(stderr, "not a jump");
-		exit(EXIT_FAILURE);
-	case IMR_ALU_OP_EQ:
-	case IMR_ALU_OP_NE:
-	case IMR_ALU_OP_LT:
-	case IMR_ALU_OP_LTE:
-	case IMR_ALU_OP_GT:
-	case IMR_ALU_OP_GTE:
-		EMIT(bprog, BPF_JMP_IMM(alu_jmp_get_negated_bpf_opcode(o->alu.op), regl, 0, 0));
-		break;
-        }
-
-	imr_register_release(state, sizeof(uint64_t));
-	return 0;
-}
-
-static int __imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
-	            struct imr_state *state,
-			    const struct imr_object *o,
-				int regl)
+static int imr_jit_obj_alu(struct bpf_prog *bprog,
+				  struct imr_state *state,
+				  const struct imr_object *o)
 {
 	const struct imr_object *right;
-	enum imr_reg_num regr;
-	int op, ret;
+	enum imr_reg_num regl, regr;
+	int ret, op, bpf_reg;
+
+	switch (o->alu.op) {
+	case IMR_ALU_OP_EQ:
+		op = BPF_JNE;
+		break;
+	case IMR_ALU_OP_NE:
+		op = BPF_JEQ;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = imr_jit_object(bprog, state, o->alu.left);
+	if (ret) 
+		return ret;
+
+	regl = imr_register_get(state, o->len);
+	if (regl < 0) 
+		return -EINVAL;
 
 	right = o->alu.right;
 
-	op = alu_jmp_get_negated_bpf_opcode(o->alu.op);
-
-	/* avoid 2nd register if possible */
+	/* avoid 2nd register if possible for immediate values*/
 	if (right->type == IMR_OBJ_TYPE_IMMEDIATE) {
 		switch (right->len) {
 		case sizeof(uint32_t):
@@ -260,95 +151,61 @@ static int __imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
 		}
 	}
 
-	regr = imr_register_alloc(state, right->len);
-	if (regr < 0)
-		return -ENOSPC;
-
-	ret = imr_jit_object(bprog, state, right);
-	if (ret == 0) {
-		EMIT(bprog, BPF_JMP_REG(op, regl, regr, 0));
-	}
-
-	imr_register_release(state, right->len);
-	return ret;
+	return 0;
 }
 
-static int imr_jit_obj_alu_jmp(struct bpf_prog *bprog,
-	               struct imr_state *state,
-			       const struct imr_object *o,
-			       int regl)
-
-{
-	int ret;
-
-	// multiple tests on same source? 
-	if (o->alu.left->type == IMR_OBJ_TYPE_ALU) {
-		ret = imr_jit_obj_alu_jmp(bprog, state, o->alu.left, regl);
-		if (ret < 0)
-			return ret;
-	} else {
-		ret = imr_jit_object(bprog, state, o->alu.left);
-		if (ret < 0)
-			return ret;
+static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
+	int ret = 0;
+	//Network Layer
+	switch(state->network_layer){
+		case NETWORK_IP4:
+			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
+			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
+				sizeof(struct ethhdr) + sizeof(struct iphdr)));
+			EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_3, BPF_REG_1, 2));
+			break;
+		default:
+			fprintf(stderr, "Unsupported network layer");
+			ret = -1;
+			break;
 	}
 
-	ret = __imr_jit_obj_alu_jmp(bprog, state, o, regl);
-
-	return ret;
-}
-
-static int imr_jit_obj_alu(struct bpf_prog *bprog, struct imr_state *state, const struct imr_object *o)
-{
-	const struct imr_object *right;
-	enum imr_reg_num regl;
-	int ret, op;
-
-	switch (o->alu.op) {
-	case IMR_ALU_OP_AND:
-		op = BPF_AND;
-		break;
-	case IMR_ALU_OP_LSHIFT:
-		op = BPF_LSH;
-		break;
-	case IMR_ALU_OP_EQ:
-	case IMR_ALU_OP_NE:
-	case IMR_ALU_OP_LT:
-	case IMR_ALU_OP_LTE:
-	case IMR_ALU_OP_GT:
-	case IMR_ALU_OP_GTE:
-		if (o->len > sizeof(uint64_t))
-			return imr_jit_alu_bigcmp(bprog, state, o);
-
-		regl = imr_register_alloc(state, o->len);
-		if (regl < 0)
-			return -ENOSPC;
-
-		ret = imr_jit_obj_alu_jmp(bprog, state, o, regl);
-		imr_register_release(state, o->len);
+	//Exit if not right network layer
+	ret = imr_jit_verdict(bprog, bprog->verdict);
+	if (ret != 0) {
+		fprintf(stderr, "Failure to JIT network layer verdict");
 		return ret;
 	}
 
-	ret = imr_jit_object(bprog, state, o->alu.left);
-	if (ret)
-		return ret;
-
-	regl = imr_register_get(state, o->len);
-	if (regl < 0)
-		return -EINVAL;
-
-	right = o->alu.right;
-
-	// avoid 2nd register if possible 
-	if (right->type == IMR_OBJ_TYPE_IMMEDIATE) {
-		switch (right->len) {
-		case sizeof(uint32_t):
-			EMIT(bprog, BPF_ALU32_IMM(op, regl, right->imm.value32));
-			return 0;
-		}
+	//Transport layer 
+	switch(state->transport_layer) {
+		case TRANSPORT_TCP:
+			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
+			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
+				sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)));
+			EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_3, BPF_REG_1, 2));
+			//Exit if not right transport layer
+			ret = imr_jit_verdict(bprog, bprog->verdict);
+			if (ret != 0) {
+				fprintf(stderr, "Failure to JIT transport layer verdict");
+				return ret;
+			}
+			EMIT(bprog, BPF_LDX_MEM(BPF_B, BPF_REG_1, BPF_REG_2, sizeof(struct ethhdr) + offsetof(struct iphdr, protocol)));
+			EMIT(bprog, BPF_ALU64_IMM(BPF_AND, BPF_REG_1, 255));
+			EMIT(bprog, BPF_JMP_IMM(BPF_JNE, BPF_REG_1, IPPROTO_TCP, 2));
+			ret = imr_jit_verdict(bprog, bprog->verdict);
+			if (ret != 0) {
+				fprintf(stderr, "Failure to JIT transport layer verdict");
+				return ret;
+			}
+			break;
+		default:
+			fprintf(stderr, "Unsupported transport layer");
+			ret = -1;
+			break;
 	}
 
-	fprintf(stderr, "alu bitops only handle 32bit immediate RHS");
-	return -EINVAL;
+	return ret;
 }
 
 /*
@@ -360,7 +217,7 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog, struct imr_state *state, cons
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 {
-	unsigned int start, end, count, len_cur;
+	unsigned int start, end, count, len_cur, ret;
 
 	end = state->num_objects;
 	if (i >= end) {
@@ -370,20 +227,18 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 
 	len_cur = bprog->len_cur;
 
-	/*if (bprog->type == BPF_PROG_TYPE_XDP)
-	{
-		EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
-		EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
-			   sizeof(struct ethhdr) + sizeof(struct iphdr)));
-		EMIT(bprog, BPF_JMP_REG(BPF_JGT, BPF_REG_1, BPF_REG_3, 0));
-		EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, -(int)sizeof(struct iphdr)));
-	}*/
+	ret = imr_jit_rule_begin(bprog, state);
+	if (ret != 0) {
+		fprintf(stderr, "Failed to JIT rule begin");
+		return ret;
+
+	}
 
 	start = i;
 	count = 0;
 
 	for (i = start; start < end; i++) {
-		int ret = imr_jit_object(bprog, state, state->objects[i]);
+		ret = imr_jit_object(bprog, state, state->objects[i]);
 
 		if (ret < 0) {
 			fprintf(stderr, "failed to JIT object type %d\n",  state->objects[i]->type);
@@ -412,16 +267,16 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 	@param bprog - bpf program that has image to load the prologue into 
 	@return Return code for generating prologue 
 */
-static int imr_jit_prologue(struct bpf_prog *bprog)
+static int imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 {
 	int ret = 0;
 
-	//Switch the type 
+	//Switch the hook
 	switch(bprog->type) 
 	{
 		//XDP layer 
 		case BPF_PROG_TYPE_XDP:
-			ret = xdp_imr_jit_prologue(bprog);
+			ret = xdp_imr_jit_prologue(bprog, state);
 			break;
 		//HERE: sk_buff imr_reload_skb_data
 		//bprog->type is not supported 
@@ -446,7 +301,6 @@ int imr_jit_object(struct bpf_prog *bprog,
 		return imr_jit_obj_immediate(bprog, s, o);
 	case IMR_OBJ_TYPE_ALU:
 		return imr_jit_obj_alu(bprog, s, o);
-	//HERE: META and others
 	}
 
 	return -EINVAL;
@@ -523,7 +377,7 @@ int imr_do_bpf(struct imr_state *s)
 	}
 
 	//Create bpf proglogue for bpf program 
-	ret = imr_jit_prologue(&bprog);
+	ret = imr_jit_prologue(&bprog, s);
 	if (ret < 0)
 		return ret;
 

@@ -132,21 +132,33 @@ int xdp_load_fd(int ifindex, int fd, __u32 flags)
     return bpf_set_link_xdp_fd(ifindex, fd, flags);
 }
 
-int xdp_imr_jit_prologue(struct bpf_prog *bprog)
+int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 {
-    //XDP prologue
-	EMIT(bprog, BPF_MOV64_REG(BPF_REG_9, BPF_REG_1));              /* r9 = r1 */                          
-	EMIT(bprog, BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_9,		   /* r2 = r9 + xdp_md data length*/
+	int ret = 0;
+    //XDP prologue - required for all XDP programs
+	EMIT(bprog, BPF_MOV64_REG(BPF_REG_9, BPF_REG_1));                                   
+	EMIT(bprog, BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_9,		   
 			 offsetof(struct xdp_md, data)));               
-	EMIT(bprog, BPF_LDX_MEM(BPF_W, BPF_REG_3, BPF_REG_9,		   /* r3 = r9 + xdp_md data_end length*/ 
+	EMIT(bprog, BPF_LDX_MEM(BPF_W, BPF_REG_3, BPF_REG_9,		   
 			 offsetof(struct xdp_md, data_end)));           
-	EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));              /* r1 = r2 */
-	EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, ETH_HLEN));      // r1 += ETH_HLEN
-	EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2));    // if (r1 <= r3) goto pc + 2
-	EMIT(bprog, BPF_MOV32_IMM(BPF_REG_0, bprog->verdict));         // r0 = verdict (default: pass)
- 	EMIT(bprog, BPF_EXIT_INSN());                                  /* return r0 */   
+	EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));     
 
-    return 0;
+	//XDP link layer, ethernet only for now 
+	switch(state->link_layer) {
+		case LINK_ETHERNET:
+			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, ETH_HLEN));
+			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2)); 
+			break;
+		default:
+			fprintf(stderr, "Unsupported XDP link type");
+			ret = -1;
+			break;
+	}   
+
+	//XDP prologue - end after link
+	EMIT(bprog, BPF_MOV32_IMM(BPF_REG_0, bprog->verdict));         // r0 = verdict (default: pass)
+ 	EMIT(bprog, BPF_EXIT_INSN());                                   
+    return ret;
 }
 
 int xdp_imr_jit_obj_verdict(int imr_verdict)
@@ -169,48 +181,4 @@ int xdp_imr_jit_obj_verdict(int imr_verdict)
 	}
 
 	return verdict;
-}
-
-int xdp_imr_jit_obj_payload(struct bpf_prog *bprog, 
-                            const struct imr_state *state, 
-                            const struct imr_object *o) {
-	int base = o->payload.base;
-	int offset;
-	int bpf_width, bpf_reg;
-
-	offset = o->payload.offset;
-
-	switch (base) {
-	case IMR_PAYLOAD_BASE_LL:
-	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
-                    -(int)sizeof(struct ethhdr)));
-		break;
-	case IMR_PAYLOAD_BASE_NH:
-		break;
-	case IMR_PAYLOAD_BASE_TH:
-		/* XXX: ip options */
-		offset += sizeof(struct iphdr);
-		break;
-	}
-
-	bpf_width = bpf_reg_width(o->len);
-	bpf_reg = imr_register_get(state, o->len);
-
-	//fprintf(stderr, "store payload in bpf reg %d\n", bpf_reg);
-    EMIT(bprog, BPF_LDX_MEM(bpf_width, bpf_reg, BPF_REG_1, offset));
-
-	switch (base) {
-	case IMR_PAYLOAD_BASE_LL:
-	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
-					(int)sizeof(struct ethhdr)));
-		break;
-	case IMR_PAYLOAD_BASE_NH:
-		break;
-	case IMR_PAYLOAD_BASE_TH:
-	        EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1,
-					-(int)sizeof(struct iphdr)));
-		break;
-	}
-
-	return 0;
 }

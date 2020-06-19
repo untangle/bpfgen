@@ -10,13 +10,13 @@ int fill_imr(struct imr_state *state)
         fprintf(stderr, "bootstrap failed to create immediate");
         exit(EXIT_FAILURE);
     }
-    struct imr_object *payload = imr_object_alloc_payload (IMR_PAYLOAD_BASE_TH, 2, 2);
+    struct imr_object *payload = imr_object_alloc_payload (IMR_DEST_PORT);
     struct imr_object *alu = imr_object_alloc_alu(IMR_ALU_OP_EQ, payload, imm);
 
     ret = imr_state_add_obj(state, alu);
 
 
-    struct imr_object *verdict = imr_object_alloc_verdict(IMR_VERDICT_PASS);
+    struct imr_object *verdict = imr_object_alloc_verdict(IMR_VERDICT_DROP);
 
     ret = imr_state_add_obj(state, verdict);
 

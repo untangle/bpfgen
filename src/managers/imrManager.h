@@ -11,6 +11,8 @@
 #include <jansson.h>
 
 #include <linux/bpf.h>
+#include <linux/filter.h>
+#include <linux/if_ether.h>
 
 #include "../bpfload.h"
 #include "../imr.h"

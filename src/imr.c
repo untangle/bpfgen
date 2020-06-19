@@ -75,6 +75,15 @@ static const char *verdict_to_str(enum imr_verdict v)
 	return "invalid";
 }
 
+static const char *payload_base_to_str(enum imr_payload_base p)
+{
+	switch(p) {
+		case IMR_DEST_PORT: return "destination port";
+	}
+
+	return "invalid";
+}
+
 /*
 	Convert imr_object_imm to string and print out result  
 	@param fp - file/place to print information to
@@ -136,8 +145,8 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		break;
 	case IMR_OBJ_TYPE_PAYLOAD:
 		//Payload 
-		ret = fprintf(fp, "(base %d, off %d, len %d)",
-				o->payload.base, o->payload.offset, o->len);
+		ret = fprintf(fp, "%s",
+				payload_base_to_str(o->payload.base));
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -354,7 +363,7 @@ struct imr_object *imr_object_alloc_verdict(enum imr_verdict v)
 	return o;
 }
 
-struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t off, uint16_t len)
+struct imr_object *imr_object_alloc_payload(enum imr_payload_base b)
 {
 	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_PAYLOAD);
 
@@ -362,23 +371,7 @@ struct imr_object *imr_object_alloc_payload(enum imr_payload_base b, uint16_t of
 		return NULL;
 
 	o->payload.base = b;
-	o->payload.offset = off;
-	if (len > 16) {
-
-		return NULL;
-	}
-	if (len == 0) 
-	{
-		fprintf(stderr, "payload length is 0");
-		exit(EXIT_FAILURE);
-	}
-	if (len > 16)
-	{
-		fprintf(stderr, "payload length exceeds 16 byte");
-		exit(EXIT_FAILURE);
-	}
-
-	o->len = len;
+	o->len = sizeof(b);
 
 	return o;
 }
@@ -395,7 +388,7 @@ struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l
 	o->alu.right = r;
 
 	if (l->len == 0 || r->len == 0) {
-		fprintf(stderr, "alu op with 0 op length");
+		fprintf(stderr, "alu op with 0 op length\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -484,7 +477,6 @@ struct imr_object *imr_object_split64(struct imr_object *to_split)
 		break;
 	case IMR_OBJ_TYPE_PAYLOAD:
 		o = imr_object_copy(to_split);
-		to_split->payload.offset += sizeof(uint64_t);
 		break;
 	case IMR_OBJ_TYPE_META:
 		fprintf(stderr, "can't split meta");
