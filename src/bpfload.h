@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <linux/bpf.h>
+
+#include "common.h"
+
 //bpf_prog that holds information on a bpf program being created and loaded 
 struct bpf_prog {
 	struct bpf_insn	   *img;      // Bpf program image 
@@ -16,7 +20,6 @@ struct bpf_prog {
 
 //Function declaration
 int bpfprog_init(struct bpf_prog *bprog);
-int bpfprog_prologue(struct bpf_prog *bprog);
 int bpfprog_commit(struct bpf_prog *bprog);
 void bpfprog_destroy(struct bpf_prog *bprog);
 

@@ -5,16 +5,20 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <unistd.h>
+#include <getopt.h>
 
-#include "imr.h"
+#include "managers/imrManager.h"
 
 static int seq; 
 
 /*
 	Read in the bpf configuration file, translate it to the IMR, and load the IMR BPF program. 
+	@param run_bootstrap - if bootstrap tests should be run, passed to ruleset read 
+	@param test_to_run - if bootstrap tests are run, which test is run. Passed to ruleset read
 	@return The return code after doing translation to IMR and loading the BPF program
 */
-static int sdwan2bpf(void)
+static int sdwan2bpf(int run_bootstrap, int test_to_run)
 {
 	//Initialize variables 
 	json_t *bpf_settings;
@@ -30,7 +34,7 @@ static int sdwan2bpf(void)
 	}
 
 	//Read in ruleset from the file descriptor 
-	state = imr_ruleset_read(bpf_settings);
+	state = imr_ruleset_read(bpf_settings, run_bootstrap, test_to_run);
 	if (state == NULL) {
 		perror("ruleset_read: ");
 		exit(EXIT_FAILURE);
@@ -51,18 +55,33 @@ static int sdwan2bpf(void)
 //Main function
 int main(int argc, char *argv[])
 {
-	//No arguments should be passed to bpfgen
-	if (argc > 2) {
-		fprintf(stderr, "%s {json}\n",
-			argv[0]);
-		exit(EXIT_FAILURE);
+	int run_bootstrap = 0;
+	int test_to_run = 0;
+
+	//Run getopt if arguments passed to bpfgen
+	if (argc >= 2) {
+		int opt;
+		//Look for if -t is passed for bootstrap and test_to_run
+		while ((opt = getopt(argc, argv, "t:")) != -1) {
+			switch(opt){
+				case 't':
+					//Bootstrap and test_to_run passed
+					run_bootstrap = 1;
+					test_to_run = atoi(optarg);
+					fprintf(stdout, "Running bootstrap\n");
+					break;
+				default:
+					fprintf(stderr, "Not sure what you're looking for there, sir\n");
+					break;
+			}
+		}
 	}
 
 	//HERE: logging
 
 	//Main function to translate and load bpf program
 	int ret; // return code
-	ret = sdwan2bpf();
+	ret = sdwan2bpf(run_bootstrap, test_to_run);
 
 	//free memory
 	//fclose (log_file);

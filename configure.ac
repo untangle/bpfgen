@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([bpfgen], [0.0.1])
-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADERS([config.h])
 
