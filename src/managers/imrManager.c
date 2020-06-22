@@ -23,12 +23,21 @@ static int imr_jit_verdict(struct bpf_prog *bprog, int verdict)
 	return 0;
 }
 
+/*
+	JIT an IMR object of type verdict to BPF
+	@param bprog - bpf program to add to
+	@param o - imr_object to JIT
+	@return Return code of JITing the object 
+*/
 static int imr_jit_obj_verdict(struct bpf_prog *bprog,
 			                   const struct imr_object *o)
 {
+	//Get the verdict from the object 
 	int imr_verdict = o->verdict.verdict;
 	int verdict = -1;
 
+	//Switch the hook type and get what the BPF verdict will be
+	//based on the type 
 	switch (bprog->type) {
 	case BPF_PROG_TYPE_XDP: 
 		verdict = xdp_imr_jit_obj_verdict(imr_verdict);
@@ -38,15 +47,25 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog,
 		exit(EXIT_FAILURE);
 	}
 
+	//JIT the verdict 
 	return imr_jit_verdict(bprog, verdict);
 }
 
+/*
+	JIT an imr object of type immediate to BPF
+	@param bprog - bpf_prog to add the jitted object to
+	@param s - imr_state in order to determine registers needed 
+	@param o - imr object to jit 
+	@return Return of code of jitting object
+*/
 static int imr_jit_obj_immediate(struct bpf_prog *bprog,
 								 struct imr_state *s,
 				                 const struct imr_object *o)
 {
+	//Get a register to use 
 	int bpf_reg = imr_register_get(s, o->len);
 
+	//Switch on if 32 or 64 bit immediate, then JIT
 	switch (o->len) {
 	case sizeof(uint32_t):
 		EMIT(bprog, BPF_MOV32_IMM(bpf_reg, o->imm.value32));
@@ -62,17 +81,26 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog,
 	return -EINVAL;
 }
 
+/*
+	JIT and imr_object of type payload
+	@param bprog - bpf_prog to add jitted object to 
+	@param state - imr_state used to determine registers 
+	@param o - imr object to jit
+	@return Return code of jitting payload
+*/
 static int imr_jit_obj_payload(struct bpf_prog *bprog,
 			       const struct imr_state *state,
 			       const struct imr_object *o)
 {
 	int ret = 0;
+
+	//Switch on payload type and jit accordingly
 	switch(o->payload.base) {
-		case IMR_DEST_PORT:
+		case IMR_DEST_PORT: //Destination port
 			EMIT(bprog, BPF_LDX_MEM(BPF_H, BPF_REG_1, BPF_REG_2, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, dest)));
 			break;
-		case IMR_SRC_PORT:
+		case IMR_SRC_PORT: //Source port
 			EMIT(bprog, BPF_LDX_MEM(BPF_H, BPF_REG_1, BPF_REG_2,
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, source)));
 			break;
@@ -84,47 +112,24 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog,
 	return ret;
 }
 
-static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
-{
-	unsigned int pc, pc_end, i;
-
-	if (poc_start >= bprog->len_cur)
-	{
-		fprintf(stderr, "old poc >= current one");
-		exit(EXIT_FAILURE);
-	}
-
-	pc = 0;
-	pc_end = bprog->len_cur - poc_start;
-
-	for (i = poc_start; pc < pc_end; pc++, i++) {
-		if (BPF_CLASS(bprog->img[i].code) == BPF_JMP) {
-			if (bprog->img[i].code == (BPF_EXIT | BPF_JMP))
-				continue;
-			if (bprog->img[i].code == (BPF_CALL | BPF_JMP))
-				continue;
-
-			if (bprog->img[i].off)
-				continue;
-			bprog->img[i].off = pc_end - pc - 1;
-		}
-	}
-}
-
 //ALU OPERATIONS
-/* map op to negated bpf opcode.
- * This is because if we want to check 'eq', we need
- * to jump to end of rule ('break') on inequality, i.e.
- * 'branch if NOT equal'.
- */
+/*
+	JIT and imr_object of type alu
+	@param bprog - bpf_prog to add jitted object to 
+	@param state - imr_state used to determine registers 
+	@param o - imr object to jit
+	@return Return code of jitting alu
+*/
 static int imr_jit_obj_alu(struct bpf_prog *bprog,
 				  struct imr_state *state,
 				  const struct imr_object *o)
 {
+	//Variable declaration
 	const struct imr_object *right;
 	enum imr_reg_num regl, regr;
 	int ret, op, bpf_reg;
 
+	//For jump reasons, will do the negative bpf opcode 
 	switch (o->alu.op) {
 	case IMR_ALU_OP_EQ:
 		op = BPF_JNE;
@@ -136,18 +141,23 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog,
 		return -EINVAL;
 	}
 
+	//Jit the left side 
 	ret = imr_jit_object(bprog, state, o->alu.left);
 	if (ret < 0) 
 		return ret;
 
+	//Get the regsiter for the left side 
 	regl = imr_register_get(state, o->len);
 	if (regl < 0) 
 		return -EINVAL;
 
+	//Get the right object 
 	right = o->alu.right;
 
-	/* avoid 2nd register if possible for immediate values*/
+	// avoid jitting and using a 2nd register if possible for immediate values
+	//Create a branch for immediate values
 	if (right->type == IMR_OBJ_TYPE_IMMEDIATE) {
+		//Only support 32-bit sizes for now 
 		switch (right->len) {
 		case sizeof(uint32_t):
 			EMIT(bprog, BPF_JMP_IMM(op, regl, right->imm.value32, 0));
@@ -155,14 +165,21 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog,
 		}
 	}
 
-	return 0;
+	//Return -1 as operation is not supported 
+	return -1;
 }
 
+/*
+	JIT the beginning of an imr rule i.e. network/transport layer checks
+	@param bprog - bpf_prog to add jitted items to 
+	@param state - imr_state to use for determing layer for now 
+*/
 static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 	int ret = 0;
 	//Network Layer
 	switch(state->network_layer){
-		case NETWORK_IP4:
+		case NETWORK_IP4: //Ipv4
+			//Ensure it's an ipv4 packet
 			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr)));
@@ -183,7 +200,8 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 
 	//Transport layer 
 	switch(state->transport_layer) {
-		case TRANSPORT_TCP:
+		case TRANSPORT_TCP: //TCP
+			//Ensure it's a tcp packet and pass if not
 			EMIT(bprog, BPF_MOV64_REG(BPF_REG_1, BPF_REG_2));
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)));
@@ -209,6 +227,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 			break;
 	}
 
+	//Return return code of jitting verdict
 	return ret;
 }
 
@@ -221,16 +240,22 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_state *state) {
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 {
+	//Variable initialization 
 	unsigned int start, end, count, len_cur, ret;
 
+	//Get number of objects 
 	end = state->num_objects;
+
+	//Incomplete IMR rule check 
 	if (i >= end) {
 		fprintf(stderr, "Incomplete IMR Rule");
 		return -EINVAL;
 	}
 
+	//Current length of the bprog
 	len_cur = bprog->len_cur;
 
+	//Beginning of imr_rule
 	ret = imr_jit_rule_begin(bprog, state);
 	if (ret != 0) {
 		fprintf(stderr, "Failed to JIT rule begin");
@@ -238,19 +263,25 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 
 	}
 
+	//Start at the objects that are part of the rule 
 	start = i;
 	count = 0;
 
+	//Loop through objects and jit each object in the rule 
 	for (i = start; start < end; i++) {
+		//Jit object 
 		ret = imr_jit_object(bprog, state, state->objects[i]);
 
+		//Jitting failed
 		if (ret < 0) {
 			fprintf(stderr, "failed to JIT object type %d\n",  state->objects[i]->type);
 			return ret;
 		}
 
+		//Increase object count 
 		count++;
 
+		//Once hit a verdict, rule is done 
 		if (state->objects[i]->type == IMR_OBJ_TYPE_VERDICT)
 			break;
 	}
@@ -261,8 +292,7 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 		exit(EXIT_FAILURE);
 	}
 
-	imr_fixup_jumps(bprog, len_cur);
-
+	//Return number of objects jitted 
 	return count;
 }
 
@@ -292,10 +322,17 @@ static int imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 	return ret;
 }
 
+/*
+	JIT an imr_object
+	@param bprog - bpf_prog to add to 
+	@param s - imr_state used for register determination 
+	@param o - imr_object to jit 
+*/
 int imr_jit_object(struct bpf_prog *bprog,
 			  struct imr_state *s,
 			  const struct imr_object *o)
 {
+	//Switch on imr_object type and call the appropriate function
 	switch (o->type) {
 	case IMR_OBJ_TYPE_VERDICT:
 		return imr_jit_obj_verdict(bprog, o);
@@ -332,7 +369,9 @@ json_t *read_bpf_file(void) {
 
 /*
 	Read in bpf settings i.e. rules for bpfs
-	@param bpf_settings - The bpf_settings 
+	@param bpf_settings - The bpf_settings
+	@param run_bootstrap - if bootstrap tests are being run
+	@param test_to_run - which bootstrap test to run 
 	@return The imr_state that represents a structure of the rules 
 			so json doesn't have to be reparsed
 */
@@ -353,6 +392,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 	if (!state)
 		return NULL;
 
+	//If running the bootstrap, fill_imr state with the test_to_run
 	if (run_bootstrap) {
 		int ret = fill_imr(state, test_to_run);
 		if (ret != 0)

@@ -19,6 +19,7 @@
 #include "../common.h"
 #include "imrManagerXdp.h"
 
+//Function definitions
 int imr_jit_object(struct bpf_prog *bprog,
 			  struct imr_state *s,
 			  const struct imr_object *o);

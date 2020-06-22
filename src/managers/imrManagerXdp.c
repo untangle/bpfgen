@@ -127,11 +127,24 @@ cleanup:
 	return ret;
 }
 
+/*
+	Call the static function for loading into an XDP hook 
+	@param ifindex - interface to load onto 
+	@param fd - file descriptor of where bpf program is 
+	@param flags - any XDP flags to be passed
+	@return Return code of loading into the XDP layer
+*/
 int xdp_load_fd(int ifindex, int fd, __u32 flags)
 {
     return bpf_set_link_xdp_fd(ifindex, fd, flags);
 }
 
+/*
+	JIT an XDP prologue 
+	@param bprog - bpf_prog to add to
+	@param state - for link layer 
+	@return Return code from adding to bprog
+*/
 int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 {
 	int ret = 0;
@@ -161,10 +174,16 @@ int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
     return ret;
 }
 
+/*
+	Determine verdict for XDP
+	@param imr_verdict - imr_state verdict 
+	@return Return the XDP verdict 
+*/
 int xdp_imr_jit_obj_verdict(int imr_verdict)
 {
 	int verdict; 
 
+	//Switch the imr_verdict into the XDP verdict 
 	switch (imr_verdict) {
 	case IMR_VERDICT_NEXT: /* no-op: continue with next rule */
 		return 0;
@@ -180,5 +199,6 @@ int xdp_imr_jit_obj_verdict(int imr_verdict)
 		exit(EXIT_FAILURE);
 	}
 
+	//Return given verdict
 	return verdict;
 }

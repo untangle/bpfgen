@@ -142,9 +142,7 @@ void imr_state_print(FILE *fp, struct imr_state *s);
 void imr_state_free(struct imr_state *s);
 void imr_object_free(struct imr_object *o);
 
-struct imr_object *imr_object_copy(const struct imr_object *old);
 struct imr_object *imr_object_alloc(enum imr_obj_type t); 
-struct imr_object *imr_object_split64(struct imr_object *to_split);
 struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l, struct imr_object *r);
 struct imr_object *imr_object_alloc_payload(enum imr_payload_base b);
 struct imr_object *imr_object_alloc_verdict(enum imr_verdict v);

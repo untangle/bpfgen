@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 
+//Function definition
 int fill_imr(struct imr_state *state, int test_to_run);
 
 #endif

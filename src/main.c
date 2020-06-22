@@ -14,6 +14,8 @@ static int seq;
 
 /*
 	Read in the bpf configuration file, translate it to the IMR, and load the IMR BPF program. 
+	@param run_bootstrap - if bootstrap tests should be run, passed to ruleset read 
+	@param test_to_run - if bootstrap tests are run, which test is run. Passed to ruleset read
 	@return The return code after doing translation to IMR and loading the BPF program
 */
 static int sdwan2bpf(int run_bootstrap, int test_to_run)
@@ -59,9 +61,11 @@ int main(int argc, char *argv[])
 	//Run getopt if arguments passed to bpfgen
 	if (argc >= 2) {
 		int opt;
+		//Look for if -t is passed for bootstrap and test_to_run
 		while ((opt = getopt(argc, argv, "t:")) != -1) {
 			switch(opt){
 				case 't':
+					//Bootstrap and test_to_run passed
 					run_bootstrap = 1;
 					test_to_run = atoi(optarg);
 					fprintf(stdout, "Running bootstrap\n");

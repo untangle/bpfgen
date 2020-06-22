@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+//EMIT function declared
 #define div_round_up(n, d)      (((n) + (d) - 1) / (d))
 #define ARRAY_SIZE_BPF(x) (sizeof(x) / sizeof(*(x)))
 #define EMIT(ctx, x)							\

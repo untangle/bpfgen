@@ -4,6 +4,7 @@
 #include "../imr.h"
 #include "../common.h"
 
+//Function definition
 int xdp_load_fd(int ifindex, int fd, __u32 flags);
 int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state);
 int xdp_imr_jit_obj_verdict(int imr_verdict);
