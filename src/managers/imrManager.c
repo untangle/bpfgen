@@ -472,7 +472,7 @@ int imr_do_bpf(struct imr_state *s)
 
 	if (s->num_objects > 0)
 	{
-		//Don't use first four registers 
+		//Don't use first two registers 
 		s->regcount = 2;
 
 		//JIT each object in imr_state 
