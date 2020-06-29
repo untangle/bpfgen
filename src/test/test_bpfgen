@@ -1,0 +1,49 @@
+# Function to run the bpfgen executable and check output
+run_test () {
+	OUTPUT=$(bpfgen -t $1)
+	#If bpfgen returned 0
+	if [ $? -eq 0 ]
+	then
+		#Output from bpfgen should only have 'Running bootstrap'
+		RIGHT_OUTPUT="Running bootstrap" 
+		if [[ "$OUTPUT" == "$RIGHT_OUTPUT" ]]
+		then
+			#Test that generated bpf code is correct 
+			TAG=`bpftool p | grep xdp | awk '{split($0,a,":"); print a[1]}'` #Get bpf tag 
+			echo `bpftool p d x i $TAG` > temp # Put output of bpftool into temp 
+			DIFF=`diff temp tests/test_$1` #Ensure generated bpfcode is expected 
+			if [ $? -eq 0 ]
+			then
+				return 0
+			fi	
+							
+		fi	
+	fi
+
+	#Return 1 if failed 
+	return 1
+}
+echo "TESTING BPFGEN"
+
+#Color declarations
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo -e "RESULTS:"
+
+# Run all tests 
+for i in 1 2
+do
+	run_test $i
+	#If return code is 0, then test passed
+	if [ $? -eq 0 ] 
+	then
+		echo -e "test $i: ${GREEN}pass${NC}"
+	else
+		echo -e "test $i: ${RED}fail${NC}"
+	fi
+done
+
+#Remove temp file 
+rm temp
