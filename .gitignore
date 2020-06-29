@@ -72,3 +72,4 @@ aclocal.m4
 config.h.in
 configure
 autoscan.log
+.dirstamp
