@@ -81,6 +81,34 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog,
 	return -EINVAL;
 }
 
+
+static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
+{
+	unsigned int pc, pc_end, i;
+
+	if (poc_start >= bprog->len_cur)
+	{
+		fprintf(stderr, "old poc >= current one");
+		exit(EXIT_FAILURE);
+	}
+
+	pc = 0;
+	pc_end = bprog->len_cur - poc_start;
+
+	for (i = poc_start; pc < pc_end; pc++, i++) {
+		if (BPF_CLASS(bprog->img[i].code) == BPF_JMP) {
+			if (bprog->img[i].code == (BPF_EXIT | BPF_JMP))
+				continue;
+			if (bprog->img[i].code == (BPF_CALL | BPF_JMP))
+				continue;
+
+			if (bprog->img[i].off)
+				continue;
+			bprog->img[i].off = pc_end - pc - 1;
+		}
+	}
+}
+
 /*
 	JIT and imr_object of type payload
 	@param bprog - bpf_prog to add jitted object to 
@@ -291,6 +319,8 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 		fprintf(stderr, "rule had no verdict, start %d end %d\n", start, end);
 		exit(EXIT_FAILURE);
 	}
+
+	imr_fixup_jumps(bprog, len_cur);
 
 	//Return number of objects jitted 
 	return count;
