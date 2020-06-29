@@ -82,6 +82,45 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog,
 }
 
 /*
+	Fixup jumps in bpf program 
+	@param bprog - bpf_prog to fix jumps for 
+	@param poc_start - start of where to check jump fixing
+*/
+static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
+{
+	//Variable declaration
+	unsigned int pc, pc_end, i;
+
+	//Check to make sure the old poc is not greater than current bpf prog length 
+	if (poc_start >= bprog->len_cur)
+	{
+		fprintf(stderr, "old poc >= current one");
+		exit(EXIT_FAILURE);
+	}
+
+	//Determine section to check 
+	pc = 0;
+	pc_end = bprog->len_cur - poc_start;
+
+	//Loop through section fixing jumps
+	for (i = poc_start; pc < pc_end; pc++, i++) {
+		//If the current code piece is a jump
+		if (BPF_CLASS(bprog->img[i].code) == BPF_JMP) {
+			//Don't fix exit jumps, call jump, non jump count 
+			if (bprog->img[i].code == (BPF_EXIT | BPF_JMP))
+				continue;
+			if (bprog->img[i].code == (BPF_CALL | BPF_JMP))
+				continue;
+			if (bprog->img[i].off)
+				continue;
+
+			//Fix the jump count to the right jump fix
+			bprog->img[i].off = pc_end - pc - 1;
+		}
+	}
+}
+
+/*
 	JIT and imr_object of type payload
 	@param bprog - bpf_prog to add jitted object to 
 	@param state - imr_state used to determine registers 
@@ -292,6 +331,9 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int i)
 		exit(EXIT_FAILURE);
 	}
 
+	//Fixup jumps
+	imr_fixup_jumps(bprog, len_cur);
+
 	//Return number of objects jitted 
 	return count;
 }
@@ -430,7 +472,7 @@ int imr_do_bpf(struct imr_state *s)
 
 	if (s->num_objects > 0)
 	{
-		//Don't use first four registers 
+		//Don't use first two registers 
 		s->regcount = 2;
 
 		//JIT each object in imr_state 
