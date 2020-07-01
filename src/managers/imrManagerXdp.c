@@ -158,6 +158,8 @@ int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 
 	//XDP link layer, ethernet only for now 
 	switch(state->link_layer) {
+		case NO_LINK:
+			break;
 		case LINK_ETHERNET:
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, ETH_HLEN));
 			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2)); 

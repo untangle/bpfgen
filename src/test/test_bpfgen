@@ -1,12 +1,17 @@
 # Function to run the bpfgen executable and check output
 run_test () {
-	OUTPUT=$(bpfgen -t $1)
+	BPFGEN=bpfgen
+	if [ "${2}" = true ] 
+	then
+		BPFGEN=../bpfgen	
+	fi
+	OUTPUT=$(${BPFGEN} -t $1)
 	#If bpfgen returned 0
 	if [ $? -eq 0 ]
 	then
 		#Output from bpfgen should only have 'Running bootstrap'
 		RIGHT_OUTPUT="Running bootstrap" 
-		if [[ "$OUTPUT" == "$RIGHT_OUTPUT" ]]
+		if [[ "${OUTPUT}" == "${RIGHT_OUTPUT}" ]]
 		then
 			#Test that generated bpf code is correct 
 			TAG=`bpftool p | grep xdp | awk '{split($0,a,":"); print a[1]}'` #Get bpf tag 
@@ -23,6 +28,15 @@ run_test () {
 	#Return 1 if failed 
 	return 1
 }
+UBUNTU=false
+while getopts "u" arg; do
+	case $arg in 
+		u) 
+			UBUNTU=true
+			;;
+	esac
+done
+
 echo "TESTING BPFGEN"
 
 #Color declarations
@@ -30,12 +44,12 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo -e "RESULTS:"
+echo "RESULTS:"
 
 # Run all tests 
 for i in 1 2
 do
-	run_test $i
+	run_test $i $UBUNTU
 	#If return code is 0, then test passed
 	if [ $? -eq 0 ] 
 	then
@@ -46,4 +60,14 @@ do
 done
 
 #Remove temp file 
-rm temp
+if [ -e temp ]
+then 
+	rm temp
+fi
+
+#Remove XDP programs
+IP=`ip a | grep xdp | awk '{split($0,a,":"); print a[2]}'`
+if [ -n "${IP}" ]
+then 
+	ip link set dev ${IP} xdp off
+fi
