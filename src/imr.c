@@ -66,6 +66,11 @@ static const char *payload_base_to_str(enum imr_payload_base p)
 	return "invalid";
 }
 
+/*
+	Convert network_type to string for printing purposes 
+	@param n - network_type to convert 
+	@return String representation of network_type, n
+*/
 static const char *network_to_str(enum network_type n) 
 {
 	switch(n) {
@@ -76,6 +81,11 @@ static const char *network_to_str(enum network_type n)
 	return "invalid";
 }
 
+/*
+	Convert transport_type to string for printing purposes 
+	@param t - transport_type to convert 
+	@return String representation of transport_type, t
+*/
 static const char *transport_to_str(enum transport_type t) 
 {
 	switch(t) {
@@ -257,6 +267,7 @@ const char *type_to_str(enum imr_obj_type t)
 	Print out an imr_state 
 	@param fp - file/place to print out to 
 	@param s - imr_state to print 
+	@return Return code of printing
 */
 int imr_state_print(FILE *fp, struct imr_state *s)
 {
@@ -271,7 +282,9 @@ int imr_state_print(FILE *fp, struct imr_state *s)
 
 	//Print out each object in state 
 	for (i = 0; i < s->num_objects; i++) {
-		imr_object_print(fp, 0, s->objects[i]);
+		ret = imr_object_print(fp, 0, s->objects[i]);
+		if (ret < 0)
+			return ret;
 		putc('\n', fp);
 	}
 
@@ -289,7 +302,8 @@ struct imr_state *imr_state_alloc(void)
 	if (!s)
 		return NULL;
 
-	s->verdict = IMR_VERDICT_PASS; //Default 
+	//Default values
+	s->verdict = IMR_VERDICT_PASS; 
 
 	return s;
 }
@@ -485,6 +499,12 @@ struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l
 	return o;
 }
 
+/*
+	Allocate an imr beginning object 
+	@param n - network_type that rule is beginning with
+	@param t - transport_type that rule is beginning with 
+	@return imr_object of type IMR_OBJ_TYPE_BEGIN
+*/
 struct imr_object *imr_object_alloc_beginning(enum network_type n, enum transport_type t)
 {
 	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_BEGIN);

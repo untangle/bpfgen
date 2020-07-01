@@ -1,5 +1,10 @@
 #include "bpfgen_bootstrap.h"
 
+/*
+    Check if the object was not created
+    @param o - object to check
+    @param t - type of object 
+*/
 static void failure_to_create(struct imr_object *o, enum imr_obj_type t) {
     if (!o) {
         fprintf(stderr, "bootstrap failed to create object of type %s\n", type_to_str(t));
@@ -7,6 +12,11 @@ static void failure_to_create(struct imr_object *o, enum imr_obj_type t) {
     }
 }
 
+/*
+    Check if object was added correctly
+    @param ret - return code of attempting to add object to a imr_state
+    @param t - type of object that is being checked 
+*/
 static void failure_to_add(int ret, enum imr_obj_type t) 
 {
     if (ret < 0) {

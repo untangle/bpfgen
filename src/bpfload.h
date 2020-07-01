@@ -15,8 +15,8 @@ struct bpf_prog {
 	int			       fd;        // File descriptor to bpf file to load 
 	int			       ifindex;   // Interface to load the program to 
 	bool			   offloaded; // If hardware offload occurred 
-	enum bpf_prog_type type;	  //Hook type i.e. XDP
-	bool				debug;
+	enum bpf_prog_type type;	  // Hook type i.e. XDP
+	bool				debug;	  // If bpf_prog will include logging information
 
 	//Register tracking
 	uint8_t		            regcount;        //Register count 

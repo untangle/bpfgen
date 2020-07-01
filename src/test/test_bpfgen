@@ -1,10 +1,18 @@
 # Function to run the bpfgen executable and check output
 run_test () {
 	BPFGEN=bpfgen
+	#if running on ubuntu, call the relative path
 	if [ "${2}" = true ] 
 	then
 		BPFGEN=../bpfgen	
 	fi
+
+	#print information
+	if [ "${3}" = true ]
+	then
+		BPFGEN="${BPFGEN}"' -d'
+	fi
+
 	OUTPUT=$(${BPFGEN} -t $1)
 	#If bpfgen returned 0
 	if [ $? -eq 0 ]
@@ -28,11 +36,17 @@ run_test () {
 	#Return 1 if failed 
 	return 1
 }
+
+#if running on ubuntu, have an argument and set variable accordingly
 UBUNTU=false
-while getopts "u" arg; do
+DEBUG=false
+while getopts "ud" arg; do
 	case $arg in 
 		u) 
 			UBUNTU=true
+			;;
+		d)
+			DEBUG=true
 			;;
 	esac
 done
@@ -49,7 +63,7 @@ echo "RESULTS:"
 # Run all tests 
 for i in 1 2
 do
-	run_test $i $UBUNTU
+	run_test $i $UBUNTU $DEBUG
 	#If return code is 0, then test passed
 	if [ $? -eq 0 ] 
 	then

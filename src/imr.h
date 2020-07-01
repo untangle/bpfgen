@@ -25,6 +25,7 @@ enum imr_obj_type {
 	IMR_OBJ_TYPE_BEGIN,
 };
 
+/* imr rule type to determine jitting */
 enum imr_rule_type {
 	IMR_ALU_EQ_IMM32 = 0,
 	IMR_DROP_ALL = 1
@@ -66,16 +67,19 @@ enum imr_payload_base {
 	IMR_SRC_PORT,
 };
 
+/* link type */
 enum link_type {
 	NO_LINK = 0,
 	LINK_ETHERNET,
 };
 
+/* network type */
 enum network_type {
 	NO_NETWORK = 0,
 	NETWORK_IP4,
 };
 
+/* transport type */
 enum transport_type {
 	NO_TRANSPORT = 0,
 	TRANSPORT_TCP,
@@ -122,6 +126,7 @@ struct imr_object {
 			struct imr_object *right;
 			enum imr_alu_op op:8;
 		} alu;
+		//For beginning types
 		struct {
 			enum network_type       network_layer;  //only IP for now 
 			enum transport_type     transport_layer; //only tcp for now 
@@ -135,7 +140,7 @@ struct imr_state {
 	uint16_t	            num_objects;     //Number of objects 
 	uint8_t		            regcount;        //Register count 
 	enum link_type          link_layer;      //only ethernet for now 
-	enum imr_verdict		verdict;		 //Verdict to use
+	enum imr_verdict		verdict;		 //Verdict to use at end of rule
 
 	struct imr_object *registers[IMR_REG_COUNT];
 

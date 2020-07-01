@@ -23,6 +23,12 @@ static int imr_jit_verdict(struct bpf_prog *bprog, int verdict)
 	return 0;
 }
 
+/*
+	JIT the final verdict in a bpf prog
+	@param bprog - bpf program to add to 
+	@param verdict - final veerdict to add to
+	@return Return code of jitting the verdict
+*/
 static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict) 
 {
 	//Switch the hook type and get what the BPF verdict will be
@@ -46,8 +52,7 @@ static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict)
 	@param o - imr_object to JIT
 	@return Return code of JITing the object 
 */
-static int imr_jit_obj_verdict(struct bpf_prog *bprog,
-			                   const struct imr_object *o)
+static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *o)
 {
 	//Get the verdict from the object 
 	int imr_verdict = o->verdict.verdict;
@@ -71,12 +76,10 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog,
 /*
 	JIT an imr object of type immediate to BPF
 	@param bprog - bpf_prog to add the jitted object to
-	@param s - imr_state in order to determine registers needed 
 	@param o - imr object to jit 
 	@return Return of code of jitting object
 */
-static int imr_jit_obj_immediate(struct bpf_prog *bprog,
-				                 const struct imr_object *o)
+static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object *o)
 {
 	//Get a register to use 
 	int bpf_reg = bpf_register_get(bprog, o->len);
@@ -139,12 +142,10 @@ static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
 /*
 	JIT and imr_object of type payload
 	@param bprog - bpf_prog to add jitted object to 
-	@param state - imr_state used to determine registers 
 	@param o - imr object to jit
 	@return Return code of jitting payload
 */
-static int imr_jit_obj_payload(struct bpf_prog *bprog,
-			       const struct imr_object *o)
+static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *o)
 {
 	int ret = 0;
 
@@ -170,12 +171,10 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog,
 /*
 	JIT and imr_object of type alu
 	@param bprog - bpf_prog to add jitted object to 
-	@param state - imr_state used to determine registers 
 	@param o - imr object to jit
 	@return Return code of jitting alu
 */
-static int imr_jit_obj_alu(struct bpf_prog *bprog,
-				  const struct imr_object *o)
+static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o)
 {
 	//Variable declaration
 	const struct imr_object *right;
@@ -225,7 +224,7 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog,
 /*
 	JIT the beginning of an imr rule i.e. network/transport layer checks
 	@param bprog - bpf_prog to add jitted items to 
-	@param state - imr_state to use for determing layer for now 
+	@param object - imr_object to jit
 */
 static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object) {
 	int ret = 0;
@@ -296,7 +295,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 	JIT an IMR rule to BPF 
 	@param bprog - program to add rule to 
 	@param state - imr_state to conver to bpf 
-	@param i - index of objects to convert 
+	@param start - index of objects to convert 
 	@return Number of rules added 
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int start)
@@ -385,6 +384,10 @@ static int imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 	return ret;
 }
 
+/*
+	Print error message based on return code of ruleset read
+	@param ret - return code to determine error message with
+*/
 static void print_imr_read_ruleset_error(int ret) {
 	switch(ret) {
 		case -1:
@@ -405,40 +408,54 @@ static void print_imr_read_ruleset_error(int ret) {
 	}
 }
 
+/*
+	Generate an imr_rule from a alu with a payload eq imm32
+	@param rule - the JSON format of rule 
+	@param state - imr_state to add to 
+	@return Return code of adding rule to state
+*/
 static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *state) {
+	//Variable initialization
 	json_t *conditions, *network_layer_val, *transport_layer_val, \
 	       *payload_val, *imm32_val, *verdict_val;
 	json_int_t network_layer, transport_layer, payload, imm32, verdict;
 	
+	//Get the conditions
 	conditions = json_object_get(rule, "conditions");
 	if (!json_is_object(conditions))
 		return -1;
 
+	//Get the network_layer type. The integer will match the enum
 	network_layer_val = json_object_get(conditions, "network_layer");
 	if (!json_is_integer(network_layer_val)) 
 		return -1;
 	network_layer = json_integer_value(network_layer_val);
 
+	//Get the transport_layer type. The integer will match the enum
 	transport_layer_val = json_object_get(conditions, "transport_layer");
 	if (!json_is_integer(transport_layer_val)) 
 		return -1;
 	transport_layer = json_integer_value(transport_layer_val);
 
+	//Get the payload type. The integer will match the enum
 	payload_val = json_object_get(conditions, "payload");
 	if (!json_is_integer(payload_val)) 
 		return -1;
 	payload = json_integer_value(payload_val);	
 
+	//Get the immediate value 
 	imm32_val = json_object_get(conditions, "immediate");
 	if (!json_is_integer(imm32_val)) 
 		return -1;
 	imm32 = json_integer_value(imm32_val);
 
+	//Get the verdict val. The integer will match the enum
 	verdict_val = json_object_get(rule, "action");
 	if (!json_is_integer(verdict_val)) 
 		return -1;
 	verdict = json_integer_value(verdict_val);
 
+	//Create imr_objects 
 	struct imr_object *begin = imr_object_alloc_beginning(network_layer, transport_layer);
 	if (!begin)
 		return -2;
@@ -455,6 +472,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *s
 	if (!verdict_obj)
 		return -2;
 
+	//Add imr_objects begin, alu, and verdict in that order to imr_state
 	int ret; 
 	ret = imr_state_add_obj(state, begin);
 	if (ret < 0) 
@@ -469,39 +487,51 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *s
 	return 0;
 }
 
+/*
+	Read in the rules from the ruleset 
+	@param chain - chain to read rules from
+	@param state - imr_state struct to add to 
+	@return Return code of adding rule to state
+*/
 static int imr_read_ruleset_rules (const json_t *chain, struct imr_state *state) {
+	//Variable initialization
 	json_t *rules;
 	int i;
 	int ret = 0;
 
+	//Get rules 
 	rules = json_object_get(chain, "rules");
 	if (!json_is_array(rules))
 		return -1;
 
+	//Loop through rules 
 	for (i = 0; i < json_array_size(rules); i++) {
+		//If return code is bad, return 
 		if (ret < 0)
 			break;
 		json_t *rule, *rule_type_val;;
 		json_int_t rule_type;
 
+		//Get rule information 
 		rule = json_array_get(rules, i);
 		if (!json_is_object(rule)) 
 			return -1;
 
+		//Get type of rule. Integer will be from enum  
 		rule_type_val = json_object_get(rule, "type");
 		if (!json_is_integer(rule_type_val)) 
 			return -1;
-
 		rule_type = json_integer_value(rule_type_val);
 
+		//Switch on type 
 		switch(rule_type) {
-			case IMR_ALU_EQ_IMM32:
+			case IMR_ALU_EQ_IMM32: //Handle the alu eq imm32 case 
 				ret = imr_read_ruleset_alu_eq_imm32(rule, state);
 				break;
-			case IMR_DROP_ALL:
+			case IMR_DROP_ALL: //Set final verdict to drop
 				state->verdict = IMR_VERDICT_DROP;
 				break;
-			default:
+			default: //Unknown type
 				ret = -4;
 				break;
 		}
@@ -513,11 +543,9 @@ static int imr_read_ruleset_rules (const json_t *chain, struct imr_state *state)
 /*
 	JIT an imr_object
 	@param bprog - bpf_prog to add to 
-	@param s - imr_state used for register determination 
 	@param o - imr_object to jit 
 */
-int imr_jit_object(struct bpf_prog *bprog,
-			  const struct imr_object *o)
+int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o)
 {
 	//Switch on imr_object type and call the appropriate function
 	switch (o->type) {
@@ -590,20 +618,25 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 		}
 	} else { //If not running bootstrap, fill the ruleset properly
 		int ret = 0;
+		//Loop through bpf_settings
 		for (i = 0; i < json_array_size(bpf_settings); i++) {
+			//If return code is bad break
 			if (ret < 0)
 				break;
 			json_t *chain, *rules;
 
+			//Get the chain the loop is currently on
 			chain = json_array_get(bpf_settings, i);
 			if (!json_is_object(chain)) {
 				ret = -1;
 				break;
 			}
 
+			//Call function to read in rules
 			ret = imr_read_ruleset_rules(chain, state);
 		}
 
+		//Print out errors 
 		if (ret < 0) {
 			print_imr_read_ruleset_error(ret);
 			imr_state_free(state);
@@ -611,7 +644,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 		}
 	}
 
-	//Print out function
+	//Print out function only if debug is passed
 	if (debug) {
 		int ret = imr_state_print(stdout, state);
 		if (ret < 0) {
@@ -627,6 +660,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 /*
 	Translate an imr_state into a bpf program
 	@param s - imr_state to translate to bpf 
+	@param debug - bool to determine if printing information
 	@return Return code from all the translation 
 */
 int imr_do_bpf(struct imr_state *s, bool debug)

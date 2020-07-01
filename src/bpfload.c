@@ -79,7 +79,7 @@ static int bpf_prog_load(const struct bpf_prog *prog)
 
 	//Call the bpf function to call the bpf syscall 
 	ret = bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
-	if (ret < 0)
+	if (ret < 0) 
 		fprintf(/*log_file*/stderr, "bpf errlog: %i - %i - %s - %s\n", ret, errno, strerror(errno), log);
 
 	//Free memory 
@@ -158,6 +158,7 @@ int bpfprog_init(struct bpf_prog *bprog)
 	//Default values 
 	bprog->fd = -1;
 	bprog->regcount = 2;
+	bprog->debug = false;
 
 	//Default is XDP
 	bprog->type = BPF_PROG_TYPE_XDP;
