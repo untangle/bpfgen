@@ -11,7 +11,7 @@ run_test () {
 			#Test that generated bpf code is correct 
 			TAG=`bpftool p | grep xdp | awk '{split($0,a,":"); print a[1]}'` #Get bpf tag 
 			echo `bpftool p d x i $TAG` > temp # Put output of bpftool into temp 
-			DIFF=`diff temp tests/test_$1` #Ensure generated bpfcode is expected 
+			DIFF=`diff temp /usr/bin/tests/test_$1` #Ensure generated bpfcode is expected 
 			if [ $? -eq 0 ]
 			then
 				return 0
