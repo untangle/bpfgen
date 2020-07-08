@@ -7,6 +7,9 @@
 
 #include "common.h"
 
+// Recommend log buffer size 
+#define BPFGEN_LOG_BUF_SIZE (UINT32_MAX >> 8) // verifier maximum in kernels <= 5.1
+
 //bpf_prog that holds information on a bpf program being created and loaded 
 struct bpf_prog {
 	struct bpf_insn	   *img;      // Bpf program image 

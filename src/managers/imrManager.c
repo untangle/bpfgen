@@ -11,6 +11,7 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include <arpa/inet.h>
 #include <linux/tcp.h>
 
+extern FILE *logger;
 /*
 	JIT a verdict to BPF 
 	@param bprog - bpf program to add verdict to 
@@ -28,6 +29,7 @@ static int imr_jit_verdict(struct bpf_prog *bprog, int verdict)
 	@param bprog - bpf program to add to 
 	@param verdict - final veerdict to add to
 	@return Return code of jitting the verdict
+	@param TODO
 */
 static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict) 
 {
@@ -38,7 +40,7 @@ static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict)
 		verdict = xdp_imr_jit_obj_verdict(verdict);
 		break;
 	default:
-		fprintf(stderr, "Unsupported type for IMR_VERDICT");
+		fprintf(logger, "Unsupported type for IMR_VERDICT");
 		exit(EXIT_FAILURE);
 	}
 
@@ -50,9 +52,10 @@ static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict)
 	JIT an IMR object of type verdict to BPF
 	@param bprog - bpf program to add to
 	@param o - imr_object to JIT
+	@param TODO
 	@return Return code of JITing the object 
 */
-static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *o)
+static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
 	//Get the verdict from the object 
 	int imr_verdict = o->verdict.verdict;
@@ -65,8 +68,13 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *
 		verdict = xdp_imr_jit_obj_verdict(imr_verdict);
 		break;
 	default:
-		fprintf(stderr, "Unsupported type for IMR_VERDICT");
+		fprintf(logger, "rule %i object %i: Unsupported type for IMR_VERDICT\n", rule_id, object_id);
 		exit(EXIT_FAILURE);
+	}
+
+	if (verdict < 0) {
+		fprintf(logger, "rule %i, object %i: Failed to get bpf verdict from imr_type\n", rule_id, object_id);
+		return -1;
 	}
 
 	//JIT the verdict 
@@ -79,7 +87,7 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *
 	@param o - imr object to jit 
 	@return Return of code of jitting object
 */
-static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object *o)
+static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
 	//Get a register to use 
 	int bpf_reg = bpf_register_get(bprog, o->len);
@@ -96,7 +104,7 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object
 		break;
 	}
 
-	fprintf(stderr, "unhandled immediate size");
+	fprintf(logger, "rule_id %i, object_id %i: unhandled immediate size\n", rule_id, object_id);
 	return -EINVAL;
 }
 
@@ -104,8 +112,9 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object
 	Fixup jumps in bpf program 
 	@param bprog - bpf_prog to fix jumps for 
 	@param poc_start - start of where to check jump fixing
+	@param TODO
 */
-static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
+static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start, int rule_id)
 {
 	//Variable declaration
 	unsigned int pc, pc_end, i;
@@ -113,7 +122,7 @@ static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
 	//Check to make sure the old poc is not greater than current bpf prog length 
 	if (poc_start >= bprog->len_cur)
 	{
-		fprintf(stderr, "old poc >= current one");
+		fprintf(logger, "rule_id %i: old poc >= current one\n", rule_id);
 		exit(EXIT_FAILURE);
 	}
 
@@ -145,7 +154,7 @@ static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start)
 	@param o - imr object to jit
 	@return Return code of jitting payload
 */
-static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *o)
+static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
 	int ret = 0;
 
@@ -160,7 +169,7 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *
 				sizeof(struct ethhdr) + sizeof(struct iphdr) + offsetof(struct tcphdr, source)));
 			break;
 		default:
-			fprintf(stderr, "Payload type not recognized\n");
+			fprintf(logger, "rule_id %i, object_id %i: Payload type not recognized\n", rule_id, object_id);
 			ret = -1;
 			break;
 	}
@@ -172,9 +181,10 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *
 	JIT and imr_object of type alu
 	@param bprog - bpf_prog to add jitted object to 
 	@param o - imr object to jit
+	@param TODO
 	@return Return code of jitting alu
 */
-static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o)
+static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
 	//Variable declaration
 	const struct imr_object *right;
@@ -194,14 +204,18 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o)
 	}
 
 	//Jit the left side 
-	ret = imr_jit_object(bprog, o->alu.left);
-	if (ret < 0) 
+	ret = imr_jit_object(bprog, o->alu.left, rule_id, object_id);
+	if (ret < 0) {
+		fprintf(logger, "rule_id %i, object_id %i: Failed to JIT left side of an alu\n", rule_id, object_id);
 		return ret;
+	}
 
 	//Get the regsiter for the left side 
 	regl = bpf_register_get(bprog, o->len);
-	if (regl < 0) 
+	if (regl < 0) {
+		fprintf(logger, "rule_id %i, object_id %i: Failed to get register for left side of an alu object\n", rule_id, object_id);
 		return -EINVAL;
+	}
 
 	//Get the right object 
 	right = o->alu.right;
@@ -218,6 +232,7 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o)
 	}
 
 	//Return -1 as operation is not supported 
+	fprintf(logger, "rule_id %i, object_id %i: Operation not supported for alu object\n", rule_id, object_id);
 	return -1;
 }
 
@@ -225,11 +240,12 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o)
 	JIT the beginning of an imr rule i.e. network/transport layer checks
 	@param bprog - bpf_prog to add jitted items to 
 	@param object - imr_object to jit
+	@param TODO
 */
-static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object) {
+static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object, int rule_id) {
 	int ret = 0;
 	if (object->type != IMR_OBJ_TYPE_BEGIN) {
-		fprintf(stderr, "Not right object type for rule beginning %s\n", type_to_str(object->type));
+		fprintf(logger, "rule_id %i: Not right object type for rule beginning %s\n", rule_id, type_to_str(object->type));
 		return -1;
 	}
 	//Network Layer
@@ -244,7 +260,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2));
 			break;
 		default:
-			fprintf(stderr, "Unsupported network layer");
+			fprintf(logger, "rule_id %i: Unsupported network layer\n", rule_id);
 			ret = -1;
 			break;
 	}
@@ -252,7 +268,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 	//Exit if not right network layer
 	ret = imr_jit_verdict(bprog, bprog->verdict);
 	if (ret != 0) {
-		fprintf(stderr, "Failure to JIT network layer verdict");
+		fprintf(logger, "rule_id %i: Failure to JIT network layer verdict", rule_id);
 		return ret;
 	}
 
@@ -269,7 +285,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 			//Exit if not right transport layer
 			ret = imr_jit_verdict(bprog, bprog->verdict);
 			if (ret != 0) {
-				fprintf(stderr, "Failure to JIT transport layer verdict");
+				fprintf(logger, "rule_id %i: Failure to JIT transport layer verdict 1", rule_id);
 				return ret;
 			}
 			EMIT(bprog, BPF_LDX_MEM(BPF_B, BPF_REG_1, BPF_REG_2, sizeof(struct ethhdr) + offsetof(struct iphdr, protocol)));
@@ -277,12 +293,12 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 			EMIT(bprog, BPF_JMP_IMM(BPF_JEQ, BPF_REG_1, IPPROTO_TCP, 2));
 			ret = imr_jit_verdict(bprog, bprog->verdict);
 			if (ret != 0) {
-				fprintf(stderr, "Failure to JIT transport layer verdict");
+				fprintf(logger, "rule_id %i: Failure to JIT transport layer verdict 2", rule_id);
 				return ret;
 			}
 			break;
 		default:
-			fprintf(stderr, "Unsupported transport layer");
+			fprintf(logger, "rule_id %i: Unsupported transport layer", rule_id);
 			ret = -1;
 			break;
 	}
@@ -296,6 +312,7 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object)
 	@param bprog - program to add rule to 
 	@param state - imr_state to conver to bpf 
 	@param start - index of objects to convert 
+	@param TODO
 	@return Number of rules added 
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int start)
@@ -304,13 +321,14 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int sta
 	unsigned int i, end, len_cur;
 	int count = 0;
 	int ret;
+	int rule_start = start;
 
 	//Get number of objects 
 	end = state->num_objects;
 
 	//Incomplete IMR rule check 
 	if (i >= end) {
-		fprintf(stderr, "Incomplete IMR Rule");
+		fprintf(logger, "rule %i: Incomplete IMR Rule\n", rule_start);
 		return -EINVAL;
 	}
 
@@ -318,9 +336,9 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int sta
 	len_cur = bprog->len_cur;
 
 	//Beginning of imr_rule - needs an imr_rule beginning
-	ret = imr_jit_rule_begin(bprog, state->objects[start]);
+	ret = imr_jit_rule_begin(bprog, state->objects[start], rule_start);
 	if (ret < 0) {
-		fprintf(stderr, "Failed to JIT rule begin\n");
+		fprintf(logger, "rule %i: Failed to JIT rule begin\n", rule_start);
 		return ret;
 	}
 	count++; //Increase count for rule beginning
@@ -328,11 +346,11 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int sta
 	//Loop through objects and jit each object in the rule 
 	for (i = start+1; i < end; i++) {
 		//Jit object 
-		ret = imr_jit_object(bprog, state->objects[i]);
+		ret = imr_jit_object(bprog, state->objects[i], rule_start, i);
 
 		//Jitting failed
 		if (ret < 0) {
-			fprintf(stderr, "failed to JIT object type %d\n",  state->objects[i]->type);
+			fprintf(logger, "rule_id %i, object_id %i: failed to JIT object type %d\n", rule_start, i, state->objects[i]->type);
 			return ret;
 		}
 
@@ -346,12 +364,12 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int sta
 
 	//malformed - no verdict
 	if (i == end) {
-		fprintf(stderr, "rule had no verdict, start %d end %d\n", start, end);
+		fprintf(logger, "rule_id %i: no verdict, start %d end %d\n", rule_start, start, end);
 		exit(EXIT_FAILURE);
 	}
 
 	//Fixup jumps
-	imr_fixup_jumps(bprog, len_cur);
+	imr_fixup_jumps(bprog, len_cur, rule_start);
 
 	//Return number of objects jitted 
 	return count;
@@ -384,26 +402,92 @@ static int imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 	return ret;
 }
 
+//TODO: docs
+static const char *condition_failure_to_str(enum imr_read_ruleset_conditions_failure f) {
+	
+	switch(f) {
+		case CONDITION_NO_FAILURE: return "No failure";
+		case NETWORK_LAYER_NOT_INTEGER: return "Network layer was not an integer";
+		case TRANSPORT_LAYER_NOT_INTEGER: return "Transport layer was not an integer";
+		case PAYLOAD_NOT_INTEGER: return "Payload was not an integer";
+		case IMMEDIATE_NOT_INTEGER: return "Immediate was not an integer";
+		case ACTION_NOT_INTEGER: return "Action was not an integer";
+		case CONDITION_IMR_FAILURE: return "IMR failure on condition";
+	}
+
+	return "unknown";
+}
+
+//Todo : docs 
+static const char *rule_failure_to_str(enum imr_read_ruleset_rule_failure f) {
+
+	switch(f) {
+		case RULE_NO_FAILURE: return "No failure";
+		case RULE_NOT_OBJECT: return "Rule not a json object";
+		case RULE_TYPE_NOT_INTEGER: return "Rule type was not an integer";
+		case RULE_IMR_FAILURE: return "IMR failure on rule";
+		case CONDITION_NOT_OBJECT: return "Condition variable not an object";
+	}
+
+	return "unknown";
+}
+
+//TODO: docs
+static const char *chain_failure_to_str(enum imr_read_ruleset_chain_failure f) {
+
+	switch(f){
+		case CHAIN_NO_FAILURE: return "No failure";
+		case CHAIN_NOT_OBJECT: return "Chain not a json object";
+		case CHAIN_IMR_FAILURE: return "IMR failure on chain";
+	}
+
+	return "unknown";
+}
+
 /*
 	Print error message based on return code of ruleset read
 	@param ret - return code to determine error message with
+	@param TODO
 */
-static void print_imr_read_ruleset_error(int ret) {
+static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracker *tracker) {
 	switch(ret) {
 		case -1:
-			fprintf(stderr, "JSON is malformed\n");
+			fprintf(logger, "Chain Id %i: ", tracker->chain_id);
+			if (tracker->rule_id > -1) {
+				fprintf(logger, "Rule Id %i: ", tracker->rule_id);
+				if (tracker->condition_id > -1) {
+					fprintf(logger, "Condition Id %i: ", tracker->condition_id);
+					fprintf(logger, "JSON is malformed: ");
+					fprintf(logger, "%s", condition_failure_to_str(tracker->condition_failure));
+				}
+				else {
+					fprintf(logger, "JSON is malformed: ");
+					fprintf(logger, "%s", rule_failure_to_str(tracker->rule_failure));
+				}
+			}
+			else {
+				fprintf(logger, "JSON is malformed: ");
+				fprintf(logger, "%s", chain_failure_to_str(tracker->chain_failure));
+			}
+			fprintf(logger, "\n");
 			break;
 		case -2:
-			fprintf(stderr, "Error creating a imr_object\n");
+			//Will have rule and chain
+			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
+			fprintf(logger, "Error creating a imr_object: ");
+			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
 		case -3: 
-			fprintf(stderr, "Error adding a valid imr_object to an imr_state\n");
+			//Will have rule and chain
+			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
+			fprintf(logger, "Error adding a valid imr_object to an imr_state: ");
+			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
 		case -4:
-			fprintf(stderr, "Unknown type of rule\n");
+			fprintf(logger, "Unknown type of rule\n");
 			break;
 		default:
-			fprintf(stderr, "Error");
+			fprintf(logger, "Error reading imr ruleset");
 			break;
 	}
 }
@@ -412,9 +496,12 @@ static void print_imr_read_ruleset_error(int ret) {
 	Generate an imr_rule from a alu with a payload eq imm32
 	@param rule - the JSON format of rule 
 	@param state - imr_state to add to 
+	@param TODO
 	@return Return code of adding rule to state
 */
-static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *state) {
+static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, 
+                                         struct imr_state *state,
+										 struct imr_read_ruleset_tracker *tracker) {
 	//Variable initialization
 	json_t *conditions, *network_layer_val, *transport_layer_val, \
 	       *payload_val, *imm32_val, *verdict_val;
@@ -422,68 +509,108 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *s
 	
 	//Get the conditions
 	conditions = json_object_get(rule, "conditions");
-	if (!json_is_object(conditions))
+	if (!json_is_object(conditions)) {
+		tracker->rule_failure = CONDITION_NOT_OBJECT;
 		return -1;
+	}
 
 	//Get the network_layer type. The integer will match the enum
+	tracker->condition_id = 0;
 	network_layer_val = json_object_get(conditions, "network_layer");
-	if (!json_is_integer(network_layer_val)) 
+	if (!json_is_integer(network_layer_val)) {
+		tracker->condition_failure = NETWORK_LAYER_NOT_INTEGER;
 		return -1;
+	}
 	network_layer = json_integer_value(network_layer_val);
 
 	//Get the transport_layer type. The integer will match the enum
+	tracker->condition_id = 1;
 	transport_layer_val = json_object_get(conditions, "transport_layer");
-	if (!json_is_integer(transport_layer_val)) 
+	if (!json_is_integer(transport_layer_val)) {
+		tracker->condition_failure = TRANSPORT_LAYER_NOT_INTEGER;
 		return -1;
+	}
 	transport_layer = json_integer_value(transport_layer_val);
 
 	//Get the payload type. The integer will match the enum
+	tracker->condition_id = 2;
 	payload_val = json_object_get(conditions, "payload");
-	if (!json_is_integer(payload_val)) 
+	if (!json_is_integer(payload_val)) {
+		tracker->condition_failure = PAYLOAD_NOT_INTEGER;
 		return -1;
+	}
 	payload = json_integer_value(payload_val);	
 
 	//Get the immediate value 
+	tracker->condition_id = 3;
 	imm32_val = json_object_get(conditions, "immediate");
-	if (!json_is_integer(imm32_val)) 
+	if (!json_is_integer(imm32_val)) {
+		tracker->condition_failure = IMMEDIATE_NOT_INTEGER;
 		return -1;
+	}
 	imm32 = json_integer_value(imm32_val);
 
 	//Get the verdict val. The integer will match the enum
+	tracker->condition_id = 4;
 	verdict_val = json_object_get(rule, "action");
-	if (!json_is_integer(verdict_val)) 
+	if (!json_is_integer(verdict_val)) {
+		tracker->condition_failure = ACTION_NOT_INTEGER;
 		return -1;
+	}
 	verdict = json_integer_value(verdict_val);
 
 	//Create imr_objects 
+	tracker->chain_failure = CHAIN_IMR_FAILURE; //To limit amount of code, set to failure 
+	tracker->rule_failure = RULE_IMR_FAILURE; //To limit amount of code, set to failure 
+	tracker->condition_failure = CONDITION_IMR_FAILURE; //To limit amount of code, set to failure
 	struct imr_object *begin = imr_object_alloc_beginning(network_layer, transport_layer);
-	if (!begin)
+	if (!begin) {
+		tracker->imr_failure = IMR_OBJ_TYPE_BEGIN;
 		return -2;
+	}
 	struct imr_object *payload_obj = imr_object_alloc_payload(payload);
-	if (!payload_obj)
+	if (!payload_obj) {
+		tracker->imr_failure = IMR_OBJ_TYPE_PAYLOAD;
 		return -2;
+	}
 	struct imr_object *imm = imr_object_alloc_imm32(ntohs(imm32));
-	if (!imm)
+	if (!imm) {
+		tracker->imr_failure = IMR_OBJ_TYPE_IMMEDIATE;
 		return -2;
+	}
 	struct imr_object *alu = imr_object_alloc_alu(IMR_ALU_OP_EQ, payload_obj, imm);
-	if (!alu)
+	if (!alu) {
+		tracker->imr_failure = IMR_OBJ_TYPE_ALU;
 		return -2;
+	}
 	struct imr_object *verdict_obj = imr_object_alloc_verdict(verdict);
-	if (!verdict_obj)
+	if (!verdict_obj) {
+		tracker->imr_failure = IMR_OBJ_TYPE_VERDICT;
 		return -2;
+	}
 
 	//Add imr_objects begin, alu, and verdict in that order to imr_state
 	int ret; 
 	ret = imr_state_add_obj(state, begin);
-	if (ret < 0) 
+	if (ret < 0) {
+		tracker->imr_failure = IMR_OBJ_TYPE_BEGIN;
 		return -3;
+	}
 	ret = imr_state_add_obj(state, alu);
-	if (ret < 0) 
+	if (ret < 0) {
+		tracker->imr_failure = IMR_OBJ_TYPE_ALU;
 		return -3;
+	}
 	ret = imr_state_add_obj(state, verdict_obj);
-	if (ret < 0) 
+	if (ret < 0) {
+		tracker->imr_failure = IMR_OBJ_TYPE_VERDICT;
 		return -3;
+	}
 
+	tracker->chain_failure = CHAIN_NO_FAILURE; //Set back to none if all passed
+	tracker->rule_failure = RULE_NO_FAILURE; //Set back to none if all passed
+	tracker->condition_failure = CONDITION_NO_FAILURE; //Set back to none if all passed
+	
 	return 0;
 }
 
@@ -491,9 +618,12 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, struct imr_state *s
 	Read in the rules from the ruleset 
 	@param chain - chain to read rules from
 	@param state - imr_state struct to add to 
+	@param TODO
 	@return Return code of adding rule to state
 */
-static int imr_read_ruleset_rules (const json_t *chain, struct imr_state *state) {
+static int imr_read_ruleset_rules (const json_t *chain, 
+                                   struct imr_state *state,
+								   struct imr_read_ruleset_tracker *tracker) {
 	//Variable initialization
 	json_t *rules;
 	int i;
@@ -509,24 +639,30 @@ static int imr_read_ruleset_rules (const json_t *chain, struct imr_state *state)
 		//If return code is bad, return 
 		if (ret < 0)
 			break;
+
 		json_t *rule, *rule_type_val;;
 		json_int_t rule_type;
+		tracker->rule_id = i;
 
 		//Get rule information 
 		rule = json_array_get(rules, i);
-		if (!json_is_object(rule)) 
+		if (!json_is_object(rule)) {
+			tracker->rule_failure = RULE_NOT_OBJECT;
 			return -1;
+		}
 
 		//Get type of rule. Integer will be from enum  
 		rule_type_val = json_object_get(rule, "type");
-		if (!json_is_integer(rule_type_val)) 
+		if (!json_is_integer(rule_type_val)) {
+			tracker->rule_failure = RULE_TYPE_NOT_INTEGER;
 			return -1;
+		}
 		rule_type = json_integer_value(rule_type_val);
 
 		//Switch on type 
 		switch(rule_type) {
 			case IMR_ALU_EQ_IMM32: //Handle the alu eq imm32 case 
-				ret = imr_read_ruleset_alu_eq_imm32(rule, state);
+				ret = imr_read_ruleset_alu_eq_imm32(rule, state, tracker);
 				break;
 			case IMR_DROP_ALL: //Set final verdict to drop
 				state->verdict = IMR_VERDICT_DROP;
@@ -535,28 +671,33 @@ static int imr_read_ruleset_rules (const json_t *chain, struct imr_state *state)
 				ret = -4;
 				break;
 		}
+
+		//If return code is bad, return 
+		if (ret < 0)
+			break;
 	}
 
-	return 0;
+	return ret;
 }
 
 /*
 	JIT an imr_object
 	@param bprog - bpf_prog to add to 
 	@param o - imr_object to jit 
+	@param TODO
 */
-int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o)
+int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
 	//Switch on imr_object type and call the appropriate function
 	switch (o->type) {
 	case IMR_OBJ_TYPE_VERDICT:
-		return imr_jit_obj_verdict(bprog, o);
+		return imr_jit_obj_verdict(bprog, o, rule_id, object_id);
 	case IMR_OBJ_TYPE_PAYLOAD:
-		return imr_jit_obj_payload(bprog, o);
+		return imr_jit_obj_payload(bprog, o, rule_id, object_id);
 	case IMR_OBJ_TYPE_IMMEDIATE:
-		return imr_jit_obj_immediate(bprog, o);
+		return imr_jit_obj_immediate(bprog, o, rule_id, object_id);
 	case IMR_OBJ_TYPE_ALU:
-		return imr_jit_obj_alu(bprog, o);
+		return imr_jit_obj_alu(bprog, o, rule_id, object_id);
 	}
 
 	return -EINVAL;
@@ -564,6 +705,7 @@ int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o)
 
 /*
 	Read in the bpf_config_file
+	@param TODO
 	@return a json object of the bpf configuration file
 */
 json_t *read_bpf_file(void) {
@@ -575,7 +717,8 @@ json_t *read_bpf_file(void) {
 	bpf_settings = json_load_file(bpf_config_file, 0, &jerr);
 	if (!bpf_settings) 
 	{
-		perror("json_load_file");
+		fprintf(logger, "jannsson failed to load file: ");
+		fprintf(logger, "%s\n", jerr.text);
 		return NULL;
 	}
 
@@ -588,31 +731,46 @@ json_t *read_bpf_file(void) {
 	@param run_bootstrap - if bootstrap tests are being run
 	@param test_to_run - which bootstrap test to run 
 	@param debug - bool for if debug information is printed
+	@param TODO
 	@return The imr_state that represents a structure of the rules 
 			so json doesn't have to be reparsed
 */
-struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int test_to_run, bool debug)
+struct imr_state *imr_ruleset_read(json_t *bpf_settings, 
+                                   int run_bootstrap, 
+								   int test_to_run, 
+								   bool debug)
 {
 	//Variable definition 
 	struct imr_state *state; 
+	struct imr_read_ruleset_tracker *tracker;
 	int i, j;
+
+	//Allocate tracker
+	tracker = calloc(1, sizeof(struct imr_read_ruleset_tracker));
+	if (!tracker) {
+		fprintf(logger, "error: could not create ruleset_tracker\n");
+		return NULL;
+	}
 
 	//If bpf_settings is not array, then configuration file is malformed 
 	if (!json_is_array(bpf_settings))
 	{
-		perror("error: root is not an array");
+		fprintf(logger, "error: root of bpf_settings is not an array\n");
 		return NULL;
 	}
 
 	//Allocate the imr state 
 	state = imr_state_alloc();
-	if (!state)
+	if (!state) {
+		fprintf(logger, "error: Could not create a new imr state\n");
 		return NULL;
+	}
 
 	//If running the bootstrap, fill_imr state with the test_to_run
 	if (run_bootstrap) {
 		int ret = fill_imr(state, test_to_run);
 		if (ret < 0) {
+			fprintf(logger, "error: Bootstrap failed to fill at test %i", test_to_run);
 			imr_state_free(state);
 			return NULL;
 		}
@@ -620,25 +778,38 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 		int ret = 0;
 		//Loop through bpf_settings
 		for (i = 0; i < json_array_size(bpf_settings); i++) {
-			//If return code is bad break
+			//If return code is bad, break
 			if (ret < 0)
 				break;
+
 			json_t *chain, *rules;
+			tracker->chain_id = i;
+			tracker->rule_id = -1;
+			tracker->condition_id = -1;
+			tracker->chain_failure = CHAIN_NO_FAILURE;
+			tracker->rule_failure = RULE_NO_FAILURE;
+			tracker->condition_failure = CONDITION_NO_FAILURE;
+			tracker->imr_failure = IMR_OBJ_TYPE_NONE;
 
 			//Get the chain the loop is currently on
 			chain = json_array_get(bpf_settings, i);
 			if (!json_is_object(chain)) {
+				tracker->chain_failure = CHAIN_NOT_OBJECT;
 				ret = -1;
 				break;
 			}
 
 			//Call function to read in rules
-			ret = imr_read_ruleset_rules(chain, state);
+			ret = imr_read_ruleset_rules(chain, state, tracker);
+
+			//If return code is bad, break
+			if (ret < 0)
+				break;
 		}
 
 		//Print out errors 
 		if (ret < 0) {
-			print_imr_read_ruleset_error(ret);
+			print_imr_read_ruleset_error(ret, tracker);
 			imr_state_free(state);
 			return NULL;
 		}
@@ -646,9 +817,9 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 
 	//Print out function only if debug is passed
 	if (debug) {
-		int ret = imr_state_print(stdout, state);
+		int ret = imr_state_print(logger, state);
 		if (ret < 0) {
-			fprintf(stderr, "Print failed\n");
+			fprintf(logger, "error: Print failed\n");
 			imr_state_free(state);
 			return NULL;
 		}
@@ -661,6 +832,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings, int run_bootstrap, int 
 	Translate an imr_state into a bpf program
 	@param s - imr_state to translate to bpf 
 	@param debug - bool to determine if printing information
+	@param TODO
 	@return Return code from all the translation 
 */
 int imr_do_bpf(struct imr_state *s, bool debug)
@@ -672,6 +844,7 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 	//Allocate and initialize the bprof program, return if failure  
     ret = bpfprog_init(&bprog);
     if (ret < 0) {
+		fprintf(logger, "error: Failed to create bpf program\n");
     	return ret;
 	}
 
@@ -683,8 +856,10 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 
 	//Create bpf proglogue for bpf program 
 	ret = imr_jit_prologue(&bprog, s);
-	if (ret < 0)
+	if (ret < 0) {
+		fprintf(logger, "error: Failed to create prologue for bpf program\n");
 		return ret;
+	}
 
 	if (s->num_objects > 0)
 	{
@@ -695,7 +870,7 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 
 			//If jit failed, return accordingly
 			if (bpf_insn < 0) {
-				fprintf(stderr, "rule jit failed\n");
+				fprintf(logger, "rule_id %i: rule jit failed\n", i);
 				ret = bpf_insn; 
 				break;
 			}
@@ -703,8 +878,9 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 			//Needs to have at least 1 for bpf_insn
 			if (bpf_insn == 0) 
 			{
-				perror("rule jit yields 0 insn - can't have that");
-				exit(EXIT_FAILURE);
+				fprintf(logger, "rule_id %i: rule jit yields 0 insn - can't have that\n", i);
+				ret = -1;
+				break;
 			}
 
 			i += bpf_insn;
@@ -712,15 +888,17 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 
 		//Error generating program
 		if (ret < 0) {
-			fprintf(stderr, "Error generating bpf program\n");
+			fprintf(logger, "Error generating bpf program\n");
 			return ret;
 		}
 	}
 
 	//Add a bpf verdict and fail if verdict failed
 	ret = imr_jit_end_verdict(&bprog, bprog.verdict);
-	if (ret < 0)
+	if (ret < 0) {
+		fprintf(logger, "Error generating bpf program verdict\n");
 		return ret;
+	}
 
 	//HERE select interface 
 	bprog.ifindex = 2;

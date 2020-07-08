@@ -11,12 +11,13 @@
 #include "managers/imrManager.h"
 
 static int seq; 
-
+FILE *logger = NULL;
 /*
 	Read in the bpf configuration file, translate it to the IMR, and load the IMR BPF program. 
 	@param run_bootstrap - if bootstrap tests should be run, passed to ruleset read 
 	@param test_to_run - if bootstrap tests are run, which test is run. Passed to ruleset read
 	@param debug - bool for if debug information is on
+	@param TODO
 	@return The return code after doing translation to IMR and loading the BPF program
 */
 static int sdwan2bpf(int run_bootstrap, int test_to_run, bool debug)
@@ -31,15 +32,15 @@ static int sdwan2bpf(int run_bootstrap, int test_to_run, bool debug)
 	bpf_settings = read_bpf_file();
 	if (bpf_settings == NULL) 
 	{
-		return 1;
+		return -1;
 	}
 
 	//Read in ruleset from the file descriptor 
 	state = imr_ruleset_read(bpf_settings, run_bootstrap, test_to_run, debug);
 	if (state == NULL) {
-		fprintf(stderr, "Ruleset read failed\n");
+		fprintf(logger, "Ruleset read failed\n");
 		json_decref(bpf_settings);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	//Release json object that is no longer needed
@@ -71,7 +72,6 @@ int main(int argc, char *argv[])
 					//Bootstrap and test_to_run passed
 					run_bootstrap = 1;
 					test_to_run = atoi(optarg);
-					fprintf(stdout, "Running bootstrap\n");
 					break;
 				case 'd':
 					debug = true;
@@ -81,16 +81,28 @@ int main(int argc, char *argv[])
 					break;
 			}
 		}
-	}
+	}	
 
-	//HERE: logging
+	//Logging
+	if (debug) {
+		logger = fopen("/tmp/bpfgen.log", "w");
+		if(!logger) {
+			fprintf(stderr, "Using stdout in debug mode\n");
+			logger = stdout;
+			exit(EXIT_FAILURE);
+		}
+	}
+	else {
+		logger = stdout;
+	}
 
 	//Main function to translate and load bpf program
 	int ret; // return code
 	ret = sdwan2bpf(run_bootstrap, test_to_run, debug);
 
-	//free memory
-	//fclose (log_file);
+	//free logger memory if in debug mode
+	if (debug) 
+		fclose (logger);
 
 	return ret;
 }

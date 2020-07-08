@@ -17,7 +17,8 @@
 
 /* Type of imr_object */
 enum imr_obj_type {
-	IMR_OBJ_TYPE_VERDICT = 0,
+	IMR_OBJ_TYPE_NONE = 0,
+	IMR_OBJ_TYPE_VERDICT,
 	IMR_OBJ_TYPE_IMMEDIATE,
 	IMR_OBJ_TYPE_PAYLOAD,
 	IMR_OBJ_TYPE_ALU,

@@ -1,5 +1,6 @@
 #include "bpfgen_bootstrap.h"
 
+extern FILE *logger;
 /*
     Check if the object was not created
     @param o - object to check
@@ -7,7 +8,7 @@
 */
 static void failure_to_create(struct imr_object *o, enum imr_obj_type t) {
     if (!o) {
-        fprintf(stderr, "bootstrap failed to create object of type %s\n", type_to_str(t));
+        fprintf(logger, "bootstrap failed to create object of type %s\n", type_to_str(t));
         exit(EXIT_FAILURE);
     }
 }
@@ -20,7 +21,7 @@ static void failure_to_create(struct imr_object *o, enum imr_obj_type t) {
 static void failure_to_add(int ret, enum imr_obj_type t) 
 {
     if (ret < 0) {
-        fprintf(stderr, "bootstrap failed to add object to an imr_state of type %s\n", type_to_str(t));
+        fprintf(logger, "bootstrap failed to add object to an imr_state of type %s\n", type_to_str(t));
         exit(EXIT_FAILURE);
     }
 }
@@ -120,7 +121,7 @@ int fill_imr(struct imr_state *state, int test_to_run)
             ret = test_2_src_port(state);
             break;
         default:
-            fprintf(stderr, "Not a valid test number\n");
+            fprintf(logger, "Not a valid test number\n");
             ret = -1;
             break;
     }
