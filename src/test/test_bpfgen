@@ -21,7 +21,7 @@ run_test () {
 		then
 			#sync-settings
 			cp /usr/bin/tests/tests_sync_settings_json/test_$1.json /etc/config/settings.json
-			SYNC_SETTINGS=$(sync-settings)
+			SYNC_SETTINGS=$(sync-settings -n)
 		#Run normal test - copy test.json to bpf.json
 		else
 			cp /usr/bin/tests/tests_bpfgen/test_$1.json /etc/config/bpf.json
@@ -89,7 +89,7 @@ NC='\033[0m'
 echo "RESULTS:"
 
 #stash old settings.json after syncing so have up to date file
-SYNC=$(sync-settings) 
+SYNC=$(sync-settings -n) 
 cp /etc/config/settings.json /settings.json.old
 cp /etc/config/bpf.json /bpf.json.old
 
