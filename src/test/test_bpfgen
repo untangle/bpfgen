@@ -88,7 +88,8 @@ NC='\033[0m'
 
 echo "RESULTS:"
 
-#stash old settings.json 
+#stash old settings.json after syncing so have up to date file
+SYNC=$(sync-settings) 
 cp /etc/config/settings.json /settings.json.old
 cp /etc/config/bpf.json /bpf.json.old
 
