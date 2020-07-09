@@ -57,13 +57,15 @@ int main(int argc, char *argv[])
 {
 	int run_bootstrap = 0;
 	int test_to_run = 0;
+	bool log_file = false;
 	bool debug = false;
+	char *log_file_name = NULL;
 
 	//Run getopt if arguments passed to bpfgen
 	if (argc >= 2) {
 		int opt;
-		//Look for if -t is passed for bootstrap and test_to_run
-		while ((opt = getopt(argc, argv, "dt:")) != -1) {
+		//Command line arguments handling
+		while ((opt = getopt(argc, argv, "l:t:d")) != -1) {
 			switch(opt){
 				case 't':
 					//Bootstrap and test_to_run passed
@@ -71,7 +73,13 @@ int main(int argc, char *argv[])
 					test_to_run = atoi(optarg);
 					break;
 				case 'd':
+					//Debug
 					debug = true;
+					break;
+				case 'l':
+					//Log file
+					log_file = true;
+					log_file_name = optarg;
 					break;
 				default:
 					fprintf(stderr, "Not sure what you're looking for there, sir\n");
@@ -80,14 +88,22 @@ int main(int argc, char *argv[])
 		}
 	}	
 
+	if (debug && !log_file) {
+		fprintf(stderr, "Need to specify -l log_file with debug mode\n");
+		exit(EXIT_FAILURE);
+	}
+
 	//Logging
-	if (debug) {
+	if (log_file) {
 		//If debugging open a file 
-		logger = fopen("/tmp/bpfgen.log", "w");
+		if (log_file_name)
+			logger = fopen(log_file_name, "w");
+		else 
+			fprintf(stderr, "Using stderr for logging\n");
 
 		//If file open fails use stderr
 		if(!logger) {
-			fprintf(stderr, "Using stdout in debug mode\n");
+			fprintf(stderr, "Using stderr in debug mode\n");
 			logger = stderr;
 		}
 	}
@@ -101,7 +117,7 @@ int main(int argc, char *argv[])
 	ret = sdwan2bpf(run_bootstrap, test_to_run, debug);
 
 	//free logger memory if in debug mode
-	if (debug) 
+	if (log_file) 
 		fclose (logger);
 
 	return ret;

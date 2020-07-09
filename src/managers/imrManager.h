@@ -23,9 +23,9 @@
 
 //Errors when reading a chain from bpf-settings json into imr
 enum imr_read_ruleset_chain_failure {
-	CHAIN_NO_FAILURE,
+	CHAIN_NO_FAILURE = 0,
 	CHAIN_NOT_OBJECT,
-	CHAIN_IMR_FAILURE,
+	RULES_NOT_ARRAY,
 };
 
 //Errors when reading a rule from bpf-settings json into imr
@@ -33,7 +33,6 @@ enum imr_read_ruleset_rule_failure {
 	RULE_NO_FAILURE = 0,
 	RULE_NOT_OBJECT,
 	RULE_TYPE_NOT_INTEGER,
-	RULE_IMR_FAILURE,
 	CONDITION_NOT_OBJECT,
 };
 
@@ -45,7 +44,14 @@ enum imr_read_ruleset_conditions_failure {
 	PAYLOAD_NOT_INTEGER,
 	IMMEDIATE_NOT_INTEGER,
 	ACTION_NOT_INTEGER,
-	CONDITION_IMR_FAILURE,
+};
+
+enum imr_read_ruleset_failure_return_codes {
+	IMR_READ_RULESET_SUCCESS = 0,
+	JSON_MALFORMED = -1,
+	IMR_CREATION_FAILED = -2,
+	IMR_ADD_FAILED = -3,
+	UNKNOWN_RULE_TYPE = -4
 };
 
 //Tracker to keep track of current chain/rule/condition and any associated failures

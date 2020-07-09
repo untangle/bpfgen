@@ -417,12 +417,11 @@ static const char *condition_failure_to_str(enum imr_read_ruleset_conditions_fai
 	
 	switch(f) {
 		case CONDITION_NO_FAILURE: return "No failure";
-		case NETWORK_LAYER_NOT_INTEGER: return "Network layer was not an integer";
-		case TRANSPORT_LAYER_NOT_INTEGER: return "Transport layer was not an integer";
-		case PAYLOAD_NOT_INTEGER: return "Payload was not an integer";
-		case IMMEDIATE_NOT_INTEGER: return "Immediate was not an integer";
-		case ACTION_NOT_INTEGER: return "Action was not an integer";
-		case CONDITION_IMR_FAILURE: return "IMR failure on condition";
+		case NETWORK_LAYER_NOT_INTEGER: return "Network layer was not an integer or does not exist";
+		case TRANSPORT_LAYER_NOT_INTEGER: return "Transport layer was not an integer or does not exist";
+		case PAYLOAD_NOT_INTEGER: return "Payload was not an integer or does not exist";
+		case IMMEDIATE_NOT_INTEGER: return "Immediate was not an integer or does not exist";
+		case ACTION_NOT_INTEGER: return "Action was not an integer or does not exist";
 	}
 
 	return "unknown";
@@ -439,7 +438,6 @@ static const char *rule_failure_to_str(enum imr_read_ruleset_rule_failure f) {
 		case RULE_NO_FAILURE: return "No failure";
 		case RULE_NOT_OBJECT: return "Rule not a json object";
 		case RULE_TYPE_NOT_INTEGER: return "Rule type was not an integer";
-		case RULE_IMR_FAILURE: return "IMR failure on rule";
 		case CONDITION_NOT_OBJECT: return "Condition variable not an object";
 	}
 
@@ -456,7 +454,7 @@ static const char *chain_failure_to_str(enum imr_read_ruleset_chain_failure f) {
 	switch(f) {
 		case CHAIN_NO_FAILURE: return "No failure";
 		case CHAIN_NOT_OBJECT: return "Chain not a json object";
-		case CHAIN_IMR_FAILURE: return "IMR failure on chain";
+		case RULES_NOT_ARRAY: return "Rules is not a json array";
 	}
 
 	return "unknown";
@@ -469,7 +467,7 @@ static const char *chain_failure_to_str(enum imr_read_ruleset_chain_failure f) {
 */
 static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracker *tracker) {
 	switch(ret) {
-		case -1: //JSON is malformed 
+		case JSON_MALFORMED: //JSON is malformed 
 			fprintf(logger, "Chain Id %i: ", tracker->chain_id);
 			if (tracker->rule_id > -1) { //Malformed at rule 
 				fprintf(logger, "Rule Id %i: ", tracker->rule_id);
@@ -489,19 +487,19 @@ static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracke
 			}
 			fprintf(logger, "\n");
 			break;
-		case -2: //Error creating an imr object
+		case IMR_CREATION_FAILED: //Error creating an imr object
 			//Will have rule and chain
 			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
 			fprintf(logger, "Error creating a imr_object: ");
 			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
-		case -3: //Error adding a valid imr object
+		case IMR_ADD_FAILED: //Error adding a valid imr object
 			//Will have rule and chain
 			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
 			fprintf(logger, "Error adding a valid imr_object to an imr_state: ");
 			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
-		case -4: //Unknown rule type
+		case UNKNOWN_RULE_TYPE: //Unknown rule type
 			fprintf(logger, "Chain Id %i: Rule Id %i: Unknown type of rule\n", tracker->chain_id, tracker->rule_id);
 			break;
 		default:
@@ -517,9 +515,9 @@ static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracke
 	@param tracker - struct tracking current chain/rule/condition and failures
 	@return Return code of adding rule to state
 */
-static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, 
-                                         struct imr_state *state,
-										 struct imr_read_ruleset_tracker *tracker) {
+static enum imr_read_ruleset_failure_return_codes imr_read_ruleset_alu_eq_imm32(const json_t *rule, 
+                                         										struct imr_state *state,
+										 										struct imr_read_ruleset_tracker *tracker) {
 	//Variable initialization
 	json_t *conditions, *network_layer_val, *transport_layer_val, \
 	       *payload_val, *imm32_val, *verdict_val;
@@ -529,7 +527,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	conditions = json_object_get(rule, "conditions");
 	if (!json_is_object(conditions)) {
 		tracker->rule_failure = CONDITION_NOT_OBJECT;
-		return -1;
+		return JSON_MALFORMED;
 	}
 
 	//Get the network_layer type. The integer will match the enum
@@ -537,7 +535,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	network_layer_val = json_object_get(conditions, "network_layer");
 	if (!json_is_integer(network_layer_val)) {
 		tracker->condition_failure = NETWORK_LAYER_NOT_INTEGER;
-		return -1;
+		return JSON_MALFORMED;
 	}
 	network_layer = json_integer_value(network_layer_val);
 
@@ -546,7 +544,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	transport_layer_val = json_object_get(conditions, "transport_layer");
 	if (!json_is_integer(transport_layer_val)) {
 		tracker->condition_failure = TRANSPORT_LAYER_NOT_INTEGER;
-		return -1;
+		return JSON_MALFORMED;
 	}
 	transport_layer = json_integer_value(transport_layer_val);
 
@@ -555,7 +553,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	payload_val = json_object_get(conditions, "payload");
 	if (!json_is_integer(payload_val)) {
 		tracker->condition_failure = PAYLOAD_NOT_INTEGER;
-		return -1;
+		return JSON_MALFORMED;
 	}
 	payload = json_integer_value(payload_val);	
 
@@ -564,7 +562,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	imm32_val = json_object_get(conditions, "immediate");
 	if (!json_is_integer(imm32_val)) {
 		tracker->condition_failure = IMMEDIATE_NOT_INTEGER;
-		return -1;
+		return JSON_MALFORMED;
 	}
 	imm32 = json_integer_value(imm32_val);
 
@@ -573,38 +571,35 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	verdict_val = json_object_get(rule, "action");
 	if (!json_is_integer(verdict_val)) {
 		tracker->condition_failure = ACTION_NOT_INTEGER;
-		return -1;
+		return JSON_MALFORMED;
 	}
 	verdict = json_integer_value(verdict_val);
 
 	//Create imr_objects 
-	tracker->chain_failure = CHAIN_IMR_FAILURE; //To limit amount of code, set to failure 
-	tracker->rule_failure = RULE_IMR_FAILURE; //To limit amount of code, set to failure 
-	tracker->condition_failure = CONDITION_IMR_FAILURE; //To limit amount of code, set to failure
 	struct imr_object *begin = imr_object_alloc_beginning(network_layer, transport_layer);
 	if (!begin) {
 		tracker->imr_failure = IMR_OBJ_TYPE_BEGIN;
-		return -2;
+		return IMR_CREATION_FAILED;
 	}
 	struct imr_object *payload_obj = imr_object_alloc_payload(payload);
 	if (!payload_obj) {
 		tracker->imr_failure = IMR_OBJ_TYPE_PAYLOAD;
-		return -2;
+		return IMR_CREATION_FAILED;
 	}
 	struct imr_object *imm = imr_object_alloc_imm32(ntohs(imm32));
 	if (!imm) {
 		tracker->imr_failure = IMR_OBJ_TYPE_IMMEDIATE;
-		return -2;
+		return IMR_CREATION_FAILED;
 	}
 	struct imr_object *alu = imr_object_alloc_alu(IMR_ALU_OP_EQ, payload_obj, imm);
 	if (!alu) {
 		tracker->imr_failure = IMR_OBJ_TYPE_ALU;
-		return -2;
+		return IMR_CREATION_FAILED;
 	}
 	struct imr_object *verdict_obj = imr_object_alloc_verdict(verdict);
 	if (!verdict_obj) {
 		tracker->imr_failure = IMR_OBJ_TYPE_VERDICT;
-		return -2;
+		return IMR_CREATION_FAILED;
 	}
 
 	//Add imr_objects begin, alu, and verdict in that order to imr_state
@@ -612,24 +607,20 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	ret = imr_state_add_obj(state, begin);
 	if (ret < 0) {
 		tracker->imr_failure = IMR_OBJ_TYPE_BEGIN;
-		return -3;
+		return IMR_ADD_FAILED;
 	}
 	ret = imr_state_add_obj(state, alu);
 	if (ret < 0) {
 		tracker->imr_failure = IMR_OBJ_TYPE_ALU;
-		return -3;
+		return IMR_ADD_FAILED;
 	}
 	ret = imr_state_add_obj(state, verdict_obj);
 	if (ret < 0) {
 		tracker->imr_failure = IMR_OBJ_TYPE_VERDICT;
-		return -3;
+		return IMR_ADD_FAILED;
 	}
-
-	tracker->chain_failure = CHAIN_NO_FAILURE; //Set back to none if all passed
-	tracker->rule_failure = RULE_NO_FAILURE; //Set back to none if all passed
-	tracker->condition_failure = CONDITION_NO_FAILURE; //Set back to none if all passed
 	
-	return 0;
+	return IMR_READ_RULESET_SUCCESS;
 }
 
 /*
@@ -639,23 +630,25 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	@param tracker - struct tracking current chain/rule/condition and failures
 	@return Return code of adding rule to state
 */
-static int imr_read_ruleset_rules (const json_t *chain, 
-                                   struct imr_state *state,
-								   struct imr_read_ruleset_tracker *tracker) {
+static enum imr_read_ruleset_failure_return_codes imr_read_ruleset_rules (const json_t *chain, 
+                                                 						  struct imr_state *state,
+								   										  struct imr_read_ruleset_tracker *tracker) {
 	//Variable initialization
 	json_t *rules;
 	int i;
-	int ret = 0;
+	enum imr_read_ruleset_failure_return_codes ret = IMR_READ_RULESET_SUCCESS;
 
 	//Get rules 
 	rules = json_object_get(chain, "rules");
-	if (!json_is_array(rules))
-		return -1;
+	if (!json_is_array(rules)) {
+		tracker->chain_failure = RULES_NOT_ARRAY;
+		return JSON_MALFORMED;
+	}
 
 	//Loop through rules 
 	for (i = 0; i < json_array_size(rules); i++) {
 		//If return code is bad, return 
-		if (ret < 0)
+		if (ret < IMR_READ_RULESET_SUCCESS)
 			break;
 
 		json_t *rule, *rule_type_val;;
@@ -666,14 +659,14 @@ static int imr_read_ruleset_rules (const json_t *chain,
 		rule = json_array_get(rules, i);
 		if (!json_is_object(rule)) {
 			tracker->rule_failure = RULE_NOT_OBJECT;
-			return -1;
+			return JSON_MALFORMED;
 		}
 
 		//Get type of rule. Integer will be from enum  
 		rule_type_val = json_object_get(rule, "type");
 		if (!json_is_integer(rule_type_val)) {
 			tracker->rule_failure = RULE_TYPE_NOT_INTEGER;
-			return -1;
+			return JSON_MALFORMED;
 		}
 		rule_type = json_integer_value(rule_type_val);
 
@@ -686,12 +679,12 @@ static int imr_read_ruleset_rules (const json_t *chain,
 				state->verdict = IMR_VERDICT_DROP;
 				break;
 			default: //Unknown type
-				ret = -4;
+				ret = UNKNOWN_RULE_TYPE;
 				break;
 		}
 
 		//If return code is bad, return 
-		if (ret < 0)
+		if (ret < IMR_READ_RULESET_SUCCESS)
 			break;
 	}
 
@@ -761,6 +754,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings,
 	struct imr_state *state; 
 	struct imr_read_ruleset_tracker *tracker;
 	int i, j;
+	int ret;
 
 	//Allocate tracker
 	tracker = calloc(1, sizeof(struct imr_read_ruleset_tracker));
@@ -785,18 +779,18 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings,
 
 	//If running the bootstrap, fill_imr state with the test_to_run
 	if (run_bootstrap) {
-		int ret = fill_imr(state, test_to_run);
+		ret = fill_imr(state, test_to_run);
 		if (ret < 0) {
 			fprintf(logger, "error: Bootstrap failed to fill at test %i", test_to_run);
 			imr_state_free(state);
 			return NULL;
 		}
 	} else { //If not running bootstrap, fill the ruleset properly
-		int ret = 0;
+		enum imr_read_ruleset_failure_return_codes ret_read = IMR_READ_RULESET_SUCCESS;
 		//Loop through bpf_settings
 		for (i = 0; i < json_array_size(bpf_settings); i++) {
 			//If return code is bad, break
-			if (ret < 0)
+			if (ret_read < IMR_READ_RULESET_SUCCESS)
 				break;
 
 			json_t *chain, *rules;
@@ -812,21 +806,21 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings,
 			chain = json_array_get(bpf_settings, i);
 			if (!json_is_object(chain)) {
 				tracker->chain_failure = CHAIN_NOT_OBJECT;
-				ret = -1;
+				ret_read = JSON_MALFORMED;
 				break;
 			}
 
 			//Call function to read in rules
-			ret = imr_read_ruleset_rules(chain, state, tracker);
+			ret_read = imr_read_ruleset_rules(chain, state, tracker);
 
 			//If return code is bad, break
-			if (ret < 0)
+			if (ret_read < IMR_READ_RULESET_SUCCESS)
 				break;
 		}
 
 		//Print out errors 
-		if (ret < 0) {
-			print_imr_read_ruleset_error(ret, tracker);
+		if (ret_read < IMR_READ_RULESET_SUCCESS) {
+			print_imr_read_ruleset_error(ret_read, tracker);
 			imr_state_free(state);
 			return NULL;
 		}
@@ -834,7 +828,7 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings,
 
 	//Print out function only if debug is passed
 	if (debug) {
-		int ret = imr_state_print(logger, state);
+		ret = imr_state_print(logger, state);
 		if (ret < 0) {
 			fprintf(logger, "error: Print failed\n");
 			imr_state_free(state);
