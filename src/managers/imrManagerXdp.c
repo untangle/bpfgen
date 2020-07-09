@@ -16,7 +16,7 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include "imrManagerXdp.h"
 #include "../bpf_insn.h"
 
-extern FILE *logger;
+extern FILE *logger; //Bpfgen logger
 /*
 	NOTE: function taken from linux BPF sample's directory 
 	Load the BPF file descriptor into the XDP layer of the given interface 

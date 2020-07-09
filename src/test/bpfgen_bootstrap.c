@@ -1,6 +1,7 @@
 #include "bpfgen_bootstrap.h"
 
-extern FILE *logger;
+extern FILE *logger; //Bpfgen logger
+
 /*
     Check if the object was not created
     @param o - object to check

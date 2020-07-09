@@ -1,6 +1,6 @@
 #include "imr.h"
 
-extern FILE *logger;
+extern FILE *logger; //Bpfgen logger
 /*
 	Convert imr_alu_op to string for printing purposes 
 	@param op - imr_alu_op to convert 
@@ -99,7 +99,7 @@ static const char *transport_to_str(enum transport_type t)
 
 /*
 	Convert imr_object_imm to string and print out result  
-	@param fp - file/place to print information to
+	@param logger - file/place to print information to
 	@param o - imr_object with imm attribute to print 
 	@return Return code from fprints
 */
@@ -123,7 +123,7 @@ static int imr_object_print_imm(FILE *logger, const struct imr_object *o)
 
 /*
 	Print out an imr_object 
-	@param fp - file/place to print information out to 
+	@param logger - file/place to print information out to 
 	@param depth - depth to print to
 	@param o - imr_object to print 
 	@return Cumulative return code of all the prints to determine if a failure occured
@@ -266,7 +266,7 @@ const char *type_to_str(enum imr_obj_type t)
 
 /*
 	Print out an imr_state 
-	@param fp - file/place to print out to 
+	@param logger - file/place to print out to 
 	@param s - imr_state to print 
 	@return Return code of printing
 */
@@ -312,7 +312,6 @@ struct imr_state *imr_state_alloc(void)
 /*
 	Free an imr_state 
 	@param s - imr_state to free 
-	@param TODO
 */
 void imr_state_free(struct imr_state *s)
 {

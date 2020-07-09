@@ -17,8 +17,8 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include "bpf_insn.h"
 #include "managers/imrManagerXdp.h"
 
-extern FILE *logger;
-char bpf_log_buf[BPFGEN_LOG_BUF_SIZE];
+extern FILE *logger; //External logger
+char bpf_log_buf[BPFGEN_LOG_BUF_SIZE]; //Log buffer for bpf program
 /*
 	Placeholder for determining ifindex from name of interface 
 	@param ifname - The name of the interface to convert to number
@@ -55,7 +55,6 @@ static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 	Instantiate the bpf_attr that is passed to the BPF syscall
 	@param prog - bpf_prog object that holds information on the BPF program from the IMR translation
 	@return Return code from calling the bpf function that calls the BPF syscall
-	@param TODO
 */
 static int bpf_prog_load(const struct bpf_prog *prog)
 {
@@ -113,7 +112,6 @@ static int bpf_load_fd(struct bpf_prog *bprog)
 	Load/generate the bpf file and load it into the proper layer 
 	@param bprog - bpf_prog structure which holds the proper information for the bpf program 
 	@return Return code for loading/generating the bpf file and loading it 
-	@param TODO
 */
 int bpfprog_commit(struct bpf_prog *bprog)
 {

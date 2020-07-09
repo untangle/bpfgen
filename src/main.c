@@ -10,21 +10,18 @@
 
 #include "managers/imrManager.h"
 
-static int seq; 
-FILE *logger = NULL;
+FILE *logger = NULL; //Bpfgen logger
 /*
 	Read in the bpf configuration file, translate it to the IMR, and load the IMR BPF program. 
 	@param run_bootstrap - if bootstrap tests should be run, passed to ruleset read 
 	@param test_to_run - if bootstrap tests are run, which test is run. Passed to ruleset read
 	@param debug - bool for if debug information is on
-	@param TODO
 	@return The return code after doing translation to IMR and loading the BPF program
 */
 static int sdwan2bpf(int run_bootstrap, int test_to_run, bool debug)
 {
 	//Initialize variables 
 	json_t *bpf_settings;
-	seq = time(NULL);
 	struct imr_state *state;
 	int ret;
 
@@ -85,14 +82,17 @@ int main(int argc, char *argv[])
 
 	//Logging
 	if (debug) {
+		//If debugging open a file 
 		logger = fopen("/tmp/bpfgen.log", "w");
+
+		//If file open fails use stderr
 		if(!logger) {
 			fprintf(stderr, "Using stdout in debug mode\n");
-			logger = stdout;
-			exit(EXIT_FAILURE);
+			logger = stderr;
 		}
 	}
 	else {
+		//Normal logging is to stderr
 		logger = stderr;
 	}
 

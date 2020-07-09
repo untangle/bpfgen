@@ -21,12 +21,14 @@
 #include "../common.h"
 #include "imrManagerXdp.h"
 
+//Errors when reading a chain from bpf-settings json into imr
 enum imr_read_ruleset_chain_failure {
 	CHAIN_NO_FAILURE,
 	CHAIN_NOT_OBJECT,
 	CHAIN_IMR_FAILURE,
 };
 
+//Errors when reading a rule from bpf-settings json into imr
 enum imr_read_ruleset_rule_failure {
 	RULE_NO_FAILURE = 0,
 	RULE_NOT_OBJECT,
@@ -35,6 +37,7 @@ enum imr_read_ruleset_rule_failure {
 	CONDITION_NOT_OBJECT,
 };
 
+//Errors when reading a condition from bpf-settings json into imr
 enum imr_read_ruleset_conditions_failure {
 	CONDITION_NO_FAILURE = 0,
 	NETWORK_LAYER_NOT_INTEGER,
@@ -45,6 +48,7 @@ enum imr_read_ruleset_conditions_failure {
 	CONDITION_IMR_FAILURE,
 };
 
+//Tracker to keep track of current chain/rule/condition and any associated failures
 struct imr_read_ruleset_tracker {
 	int chain_id;
 	int rule_id;

@@ -11,7 +11,7 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include <arpa/inet.h>
 #include <linux/tcp.h>
 
-extern FILE *logger;
+extern FILE *logger; //Bpfgen logger
 /*
 	JIT a verdict to BPF 
 	@param bprog - bpf program to add verdict to 
@@ -29,7 +29,6 @@ static int imr_jit_verdict(struct bpf_prog *bprog, int verdict)
 	@param bprog - bpf program to add to 
 	@param verdict - final veerdict to add to
 	@return Return code of jitting the verdict
-	@param TODO
 */
 static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict) 
 {
@@ -52,7 +51,8 @@ static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict)
 	JIT an IMR object of type verdict to BPF
 	@param bprog - bpf program to add to
 	@param o - imr_object to JIT
-	@param TODO
+	@param rule_id - id of rule currently jitting 
+	@param object_id - id of object currently jitting
 	@return Return code of JITing the object 
 */
 static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
@@ -72,6 +72,7 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *
 		exit(EXIT_FAILURE);
 	}
 
+	//If verdict jitting failed, log and return failure
 	if (verdict < 0) {
 		fprintf(logger, "rule %i, object %i: Failed to get bpf verdict from imr_type\n", rule_id, object_id);
 		return -1;
@@ -85,6 +86,8 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *
 	JIT an imr object of type immediate to BPF
 	@param bprog - bpf_prog to add the jitted object to
 	@param o - imr object to jit 
+	@param rule_id - id of rule currently jitting 
+	@param object_id - id of object currently jitting
 	@return Return of code of jitting object
 */
 static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
@@ -112,7 +115,7 @@ static int imr_jit_obj_immediate(struct bpf_prog *bprog, const struct imr_object
 	Fixup jumps in bpf program 
 	@param bprog - bpf_prog to fix jumps for 
 	@param poc_start - start of where to check jump fixing
-	@param TODO
+	@param rule_id - id of rule currently jitting
 */
 static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start, int rule_id)
 {
@@ -152,6 +155,8 @@ static void imr_fixup_jumps(struct bpf_prog *bprog, unsigned int poc_start, int 
 	JIT and imr_object of type payload
 	@param bprog - bpf_prog to add jitted object to 
 	@param o - imr object to jit
+	@param rule_id - id of rule currently jitting 
+	@param object_id - id of object currently jitting
 	@return Return code of jitting payload
 */
 static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
@@ -181,7 +186,8 @@ static int imr_jit_obj_payload(struct bpf_prog *bprog, const struct imr_object *
 	JIT and imr_object of type alu
 	@param bprog - bpf_prog to add jitted object to 
 	@param o - imr object to jit
-	@param TODO
+	@param rule_id - id of rule currently jitting 
+	@param object_id - id of object currently jitting
 	@return Return code of jitting alu
 */
 static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
@@ -240,7 +246,8 @@ static int imr_jit_obj_alu(struct bpf_prog *bprog, const struct imr_object *o, i
 	JIT the beginning of an imr rule i.e. network/transport layer checks
 	@param bprog - bpf_prog to add jitted items to 
 	@param object - imr_object to jit
-	@param TODO
+	@param rule_id - id of rule currently jitting 
+	@return Return code of jitting
 */
 static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object, int rule_id) {
 	int ret = 0;
@@ -312,7 +319,6 @@ static int imr_jit_rule_begin(struct bpf_prog *bprog, struct imr_object *object,
 	@param bprog - program to add rule to 
 	@param state - imr_state to conver to bpf 
 	@param start - index of objects to convert 
-	@param TODO
 	@return Number of rules added 
 */
 static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int start)
@@ -321,7 +327,7 @@ static int imr_jit_rule(struct bpf_prog *bprog, struct imr_state *state, int sta
 	unsigned int i, end, len_cur;
 	int count = 0;
 	int ret;
-	int rule_start = start;
+	int rule_start = start; //Keep track of start of rule
 
 	//Get number of objects 
 	end = state->num_objects;
@@ -402,7 +408,11 @@ static int imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 	return ret;
 }
 
-//TODO: docs
+/*
+	Convert a condition failure from a read ruleset to string
+	@param f - imr_read_ruleset_conditions_failure number to convert
+	@return The string converted from f
+*/
 static const char *condition_failure_to_str(enum imr_read_ruleset_conditions_failure f) {
 	
 	switch(f) {
@@ -418,7 +428,11 @@ static const char *condition_failure_to_str(enum imr_read_ruleset_conditions_fai
 	return "unknown";
 }
 
-//Todo : docs 
+/*
+	Convert a rule failure from a read ruleset to string
+	@param f - imr_read_ruleset_rule_failure number to convert
+	@return The string converted from f
+*/
 static const char *rule_failure_to_str(enum imr_read_ruleset_rule_failure f) {
 
 	switch(f) {
@@ -432,10 +446,14 @@ static const char *rule_failure_to_str(enum imr_read_ruleset_rule_failure f) {
 	return "unknown";
 }
 
-//TODO: docs
+/*
+	Convert a rule failure from a read ruleset to string
+	@param f - imr_read_ruleset_chain_failure number to convert
+	@return The string converted from f
+*/
 static const char *chain_failure_to_str(enum imr_read_ruleset_chain_failure f) {
 
-	switch(f){
+	switch(f) {
 		case CHAIN_NO_FAILURE: return "No failure";
 		case CHAIN_NOT_OBJECT: return "Chain not a json object";
 		case CHAIN_IMR_FAILURE: return "IMR failure on chain";
@@ -447,15 +465,15 @@ static const char *chain_failure_to_str(enum imr_read_ruleset_chain_failure f) {
 /*
 	Print error message based on return code of ruleset read
 	@param ret - return code to determine error message with
-	@param TODO
+	@param tracker - struct tracking current chain/rule/condition and failures
 */
 static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracker *tracker) {
 	switch(ret) {
-		case -1:
+		case -1: //JSON is malformed 
 			fprintf(logger, "Chain Id %i: ", tracker->chain_id);
-			if (tracker->rule_id > -1) {
+			if (tracker->rule_id > -1) { //Malformed at rule 
 				fprintf(logger, "Rule Id %i: ", tracker->rule_id);
-				if (tracker->condition_id > -1) {
+				if (tracker->condition_id > -1) { //Malformed at condition
 					fprintf(logger, "Condition Id %i: ", tracker->condition_id);
 					fprintf(logger, "JSON is malformed: ");
 					fprintf(logger, "%s", condition_failure_to_str(tracker->condition_failure));
@@ -465,26 +483,26 @@ static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracke
 					fprintf(logger, "%s", rule_failure_to_str(tracker->rule_failure));
 				}
 			}
-			else {
+			else { //Malformed at chain
 				fprintf(logger, "JSON is malformed: ");
 				fprintf(logger, "%s", chain_failure_to_str(tracker->chain_failure));
 			}
 			fprintf(logger, "\n");
 			break;
-		case -2:
+		case -2: //Error creating an imr object
 			//Will have rule and chain
 			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
 			fprintf(logger, "Error creating a imr_object: ");
 			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
-		case -3: 
+		case -3: //Error adding a valid imr object
 			//Will have rule and chain
 			fprintf(logger, "Chain Id %i: Rule Id %i: ", tracker->chain_id, tracker->rule_id);
 			fprintf(logger, "Error adding a valid imr_object to an imr_state: ");
 			fprintf(logger, "Type: %s\n", type_to_str(tracker->imr_failure));
 			break;
-		case -4:
-			fprintf(logger, "Unknown type of rule\n");
+		case -4: //Unknown rule type
+			fprintf(logger, "Chain Id %i: Rule Id %i: Unknown type of rule\n", tracker->chain_id, tracker->rule_id);
 			break;
 		default:
 			fprintf(logger, "Error reading imr ruleset");
@@ -496,7 +514,7 @@ static void print_imr_read_ruleset_error(int ret, struct imr_read_ruleset_tracke
 	Generate an imr_rule from a alu with a payload eq imm32
 	@param rule - the JSON format of rule 
 	@param state - imr_state to add to 
-	@param TODO
+	@param tracker - struct tracking current chain/rule/condition and failures
 	@return Return code of adding rule to state
 */
 static int imr_read_ruleset_alu_eq_imm32(const json_t *rule, 
@@ -618,7 +636,7 @@ static int imr_read_ruleset_alu_eq_imm32(const json_t *rule,
 	Read in the rules from the ruleset 
 	@param chain - chain to read rules from
 	@param state - imr_state struct to add to 
-	@param TODO
+	@param tracker - struct tracking current chain/rule/condition and failures
 	@return Return code of adding rule to state
 */
 static int imr_read_ruleset_rules (const json_t *chain, 
@@ -684,7 +702,8 @@ static int imr_read_ruleset_rules (const json_t *chain,
 	JIT an imr_object
 	@param bprog - bpf_prog to add to 
 	@param o - imr_object to jit 
-	@param TODO
+	@param rule_id - id of rule currently jitting 
+	@param object_id - id of object currently jitting
 */
 int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o, int rule_id, int object_id)
 {
@@ -705,7 +724,6 @@ int imr_jit_object(struct bpf_prog *bprog, const struct imr_object *o, int rule_
 
 /*
 	Read in the bpf_config_file
-	@param TODO
 	@return a json object of the bpf configuration file
 */
 json_t *read_bpf_file(void) {
@@ -731,7 +749,6 @@ json_t *read_bpf_file(void) {
 	@param run_bootstrap - if bootstrap tests are being run
 	@param test_to_run - which bootstrap test to run 
 	@param debug - bool for if debug information is printed
-	@param TODO
 	@return The imr_state that represents a structure of the rules 
 			so json doesn't have to be reparsed
 */
@@ -832,7 +849,6 @@ struct imr_state *imr_ruleset_read(json_t *bpf_settings,
 	Translate an imr_state into a bpf program
 	@param s - imr_state to translate to bpf 
 	@param debug - bool to determine if printing information
-	@param TODO
 	@return Return code from all the translation 
 */
 int imr_do_bpf(struct imr_state *s, bool debug)

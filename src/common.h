@@ -1,6 +1,5 @@
 #ifndef COMMON_H
 #define COMMON_H
-#include <stdio.h>
 
 //EMIT function declared
 #define div_round_up(n, d)      (((n) + (d) - 1) / (d))
