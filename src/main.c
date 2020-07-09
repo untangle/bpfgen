@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	else {
-		logger = stdout;
+		logger = stderr;
 	}
 
 	//Main function to translate and load bpf program
