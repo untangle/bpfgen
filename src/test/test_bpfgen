@@ -1,28 +1,84 @@
 # Function to run the bpfgen executable and check output
 run_test () {
-	OUTPUT=$(bpfgen -t $1)
-	#If bpfgen returned 0
+	BPFGEN=bpfgen
+	#if running on ubuntu, call the relative path
+
+	#print information
+	if [ "${2}" = true ]
+	then
+		BPFGEN="${BPFGEN}"' -d'
+	fi
+
+	#if not running test with real sync-settings file, set accordingly
+	if [ $1 -gt 0 ]
+	then
+		#Run bootstrap test
+		if [ "${3}" = true ]
+		then
+			BPFGEN="${BPFGEN}"' -t $1'
+		#Run sync-settings test
+		elif [ "${4}" = true ]
+		then
+			#sync-settings
+			cp /usr/bin/tests/tests_sync_settings_json/test_$1.json /etc/config/settings.json
+			SYNC_SETTINGS=$(sync-settings -n)
+		#Run normal test - copy test.json to bpf.json
+		else
+			cp /usr/bin/tests/tests_bpfgen/test_$1.json /etc/config/bpf.json
+		fi
+	fi
+
 	if [ $? -eq 0 ]
 	then
-		#Output from bpfgen should only have 'Running bootstrap'
-		RIGHT_OUTPUT="Running bootstrap" 
-		if [[ "$OUTPUT" == "$RIGHT_OUTPUT" ]]
+		OUTPUT=$(${BPFGEN})
+		#If bpfgen returned 0
+		if [ $? -eq 0 ]
 		then
-			#Test that generated bpf code is correct 
-			TAG=`bpftool p | grep xdp | awk '{split($0,a,":"); print a[1]}'` #Get bpf tag 
-			echo `bpftool p d x i $TAG` > temp # Put output of bpftool into temp 
-			DIFF=`diff temp /usr/bin/tests/test_$1` #Ensure generated bpfcode is expected 
-			if [ $? -eq 0 ]
+			#Output from bpfgen should be empty
+			if [[ -z "${OUTPUT}" ]]
 			then
-				return 0
+				#Test that generated bpf code is correct 
+				TAG=`bpftool p | grep xdp | awk '{split($0,a,":"); print a[1]}'` #Get bpf tag 
+				echo `bpftool p d x i $TAG` > temp # Put output of bpftool into temp 
+				DIFF=`diff temp /usr/bin/tests/tests_expected_bpf_output/test_$1` #Ensure generated bpfcode is expected 
+				if [ $? -eq 0 ]
+				then
+					return 0
+				fi	
 			fi	
-							
-		fi	
+		fi
 	fi
 
 	#Return 1 if failed 
 	return 1
 }
+
+#if running on ubuntu, have an argument and set variable accordingly
+DEBUG=false
+BOOTSTRAP=false
+SYNC=false
+while getopts "udbs" arg; do
+	case $arg in 
+		u) 
+			cp ../bpfgen /usr/bin
+			mkdir /usr/bin/tests
+			cp -r tests_bpfgen/ /usr/bin/tests
+			cp -r tests_expected_bpf_output/ /usr/bin/tests
+			cp -r tests_sync_settings_json/ /usr/bin/tests
+			;;
+		d)
+			DEBUG=true
+			;;
+		b)
+			BOOTSTRAP=true
+			echo "Warning: running bootstrap runs within bpfgen which will cause performance deltas in creating rules"
+			;;
+		s)
+			SYNC=true
+			;;
+	esac
+done
+
 echo "TESTING BPFGEN"
 
 #Color declarations
@@ -30,12 +86,17 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo -e "RESULTS:"
+echo "RESULTS:"
+
+#stash old settings.json after syncing so have up to date file
+SYNC=$(sync-settings -n) 
+cp /etc/config/settings.json /settings.json.old
+cp /etc/config/bpf.json /bpf.json.old
 
 # Run all tests 
-for i in 1 2
+for i in 0 1 2
 do
-	run_test $i
+	run_test $i $DEBUG $BOOTSTRAP $SYNC
 	#If return code is 0, then test passed
 	if [ $? -eq 0 ] 
 	then
@@ -45,5 +106,21 @@ do
 	fi
 done
 
+#Move old settings file back
+mv /settings.json.old /etc/config/settings.json
+mv /bpf.json.old /etc/config/bpf.json
+
 #Remove temp file 
-rm temp
+if [ -e temp ]
+then 
+	rm temp
+fi
+
+#Remove XDP programs
+IP=`ip a | grep xdp | awk '{split($0,a,":"); print a[2]}'`
+if [ -n "${IP}" ]
+then 
+	ip link set dev ${IP} xdp off
+fi
+
+

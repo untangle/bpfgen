@@ -1,5 +1,32 @@
 #include "bpfgen_bootstrap.h"
 
+extern FILE *logger; //Bpfgen logger
+
+/*
+    Check if the object was not created
+    @param o - object to check
+    @param t - type of object 
+*/
+static void failure_to_create(struct imr_object *o, enum imr_obj_type t) {
+    if (!o) {
+        fprintf(logger, "bootstrap failed to create object of type %s\n", type_to_str(t));
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+    Check if object was added correctly
+    @param ret - return code of attempting to add object to a imr_state
+    @param t - type of object that is being checked 
+*/
+static void failure_to_add(int ret, enum imr_obj_type t) 
+{
+    if (ret < 0) {
+        fprintf(logger, "bootstrap failed to add object to an imr_state of type %s\n", type_to_str(t));
+        exit(EXIT_FAILURE);
+    }
+}
+
 /*
     Test 1: testing destination port in ip/tcp 
     @param state - imr_state to fill
@@ -9,38 +36,31 @@ static int test_1_dst_port(struct imr_state *state)
 {
     int ret = 0;
 
+    //Beginning object type 
+    struct imr_object *begin = imr_object_alloc_beginning(NETWORK_IP4, TRANSPORT_TCP);
+    failure_to_create(begin, IMR_OBJ_TYPE_BEGIN);
     //Port 80
     struct imr_object *imm = imr_object_alloc_imm32(ntohs(80));
-    if (!imm)
-    {
-        fprintf(stderr, "bootstrap 1 failed to create immediate");
-        exit(EXIT_FAILURE);
-    }
+    failure_to_create(imm, IMR_OBJ_TYPE_IMMEDIATE);
     //Payload is dest port 
     struct imr_object *payload = imr_object_alloc_payload (IMR_DEST_PORT);
-    if (!payload)
-    {
-        fprintf(stderr, "bootstrap 1 failed to create payload");
-        exit(EXIT_FAILURE);
-    }
+    failure_to_create(payload, IMR_OBJ_TYPE_PAYLOAD);
     //Alu - equality 
     struct imr_object *alu = imr_object_alloc_alu(IMR_ALU_OP_EQ, payload, imm);
-    if (!alu)
-    {
-        fprintf(stderr, "bootstrap 1 failed to create alu");
-        exit(EXIT_FAILURE);
-    }
+    failure_to_create(alu, IMR_OBJ_TYPE_ALU);
     //Drop port
     struct imr_object *verdict = imr_object_alloc_verdict(IMR_VERDICT_DROP);
-    if (!verdict)
-    {
-        fprintf(stderr, "bootstrap 1 failed to create verdict");
-        exit(EXIT_FAILURE);
-    }
+    failure_to_create(verdict, IMR_OBJ_TYPE_VERDICT);
 
-    //Add alu and verdict
+    //Add object types
+    ret = imr_state_add_obj(state, begin);
+    failure_to_add(ret, IMR_OBJ_TYPE_BEGIN);
+
     ret = imr_state_add_obj(state, alu);
+    failure_to_add(ret, IMR_OBJ_TYPE_ALU);
+
     ret = imr_state_add_obj(state, verdict);
+    failure_to_add(ret, IMR_OBJ_TYPE_VERDICT);
 
     return ret;
 }
@@ -54,38 +74,31 @@ static int test_2_src_port(struct imr_state *state)
 {
     int ret = 0;
 
-    //Immediate to port 80
+    //Beginning object type 
+    struct imr_object *begin = imr_object_alloc_beginning(NETWORK_IP4, TRANSPORT_TCP);
+    failure_to_create(begin, IMR_OBJ_TYPE_BEGIN);
+    //Port 80
     struct imr_object *imm = imr_object_alloc_imm32(ntohs(80));
-    if (!imm)
-    {
-        fprintf(stderr, "bootstrap 2 failed to create immediate");
-        exit(EXIT_FAILURE);
-    }
-    //Payload - source port
+    failure_to_create(imm, IMR_OBJ_TYPE_IMMEDIATE);
+    //Payload is dest port 
     struct imr_object *payload = imr_object_alloc_payload (IMR_SRC_PORT);
-    if (!payload)
-    {
-        fprintf(stderr, "bootstrap 2 failed to create payload");
-        exit(EXIT_FAILURE);
-    }
-    //ALU - port is 80
+    failure_to_create(payload, IMR_OBJ_TYPE_PAYLOAD);
+    //Alu - equality 
     struct imr_object *alu = imr_object_alloc_alu(IMR_ALU_OP_EQ, payload, imm);
-    if (!alu)
-    {
-        fprintf(stderr, "bootstrap 2 failed to create alu");
-        exit(EXIT_FAILURE);
-    }
-    //Drop XDP verdict
+    failure_to_create(alu, IMR_OBJ_TYPE_ALU);
+    //Drop port
     struct imr_object *verdict = imr_object_alloc_verdict(IMR_VERDICT_DROP);
-    if (!verdict)
-    {
-        fprintf(stderr, "bootstrap 2 failed to create verdict");
-        exit(EXIT_FAILURE);
-    }
+    failure_to_create(verdict, IMR_OBJ_TYPE_VERDICT);
 
-    //Add alu and verdict to imr_state
+    //Add object types
+    ret = imr_state_add_obj(state, begin);
+    failure_to_add(ret, IMR_OBJ_TYPE_BEGIN);
+
     ret = imr_state_add_obj(state, alu);
+    failure_to_add(ret, IMR_OBJ_TYPE_ALU);
+
     ret = imr_state_add_obj(state, verdict);
+    failure_to_add(ret, IMR_OBJ_TYPE_VERDICT);
 
     return ret;
 }
@@ -109,7 +122,7 @@ int fill_imr(struct imr_state *state, int test_to_run)
             ret = test_2_src_port(state);
             break;
         default:
-            fprintf(stderr, "Not a valid test number\n");
+            fprintf(logger, "Not a valid test number\n");
             ret = -1;
             break;
     }

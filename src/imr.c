@@ -1,23 +1,6 @@
 #include "imr.h"
 
-/*
-	Convert imr_obj_type to string for printing purposes 
-	@param t - imr_obj_type to convert 
-	@return String representation of imr_obj_type parameter, t 
-*/
-static const char *type_to_str(enum imr_obj_type t)
-{
-	switch (t) {
-	case IMR_OBJ_TYPE_VERDICT: return "VERDICT: ";
-	case IMR_OBJ_TYPE_IMMEDIATE: return "IMM: ";
-	case IMR_OBJ_TYPE_PAYLOAD: return "PAYLOAD: ";
-	case IMR_OBJ_TYPE_ALU: return "ALU: ";
-	case IMR_OBJ_TYPE_META: return "META: ";
-	}
-
-	return "unknown";
-}
-
+extern FILE *logger; //Bpfgen logger
 /*
 	Convert imr_alu_op to string for printing purposes 
 	@param op - imr_alu_op to convert 
@@ -28,12 +11,6 @@ static const char * alu_op_to_str(enum imr_alu_op op)
 	switch (op) {
 	case IMR_ALU_OP_EQ: return "eq";
 	case IMR_ALU_OP_NE: return "ne";
-	case IMR_ALU_OP_LT: return "<";
-	case IMR_ALU_OP_LTE: return "<=";
-	case IMR_ALU_OP_GT: return ">";
-	case IMR_ALU_OP_GTE: return ">=";
-	case IMR_ALU_OP_AND: return "&";
-	case IMR_ALU_OP_LSHIFT: return "<<";
 	}
 
 	return "?";
@@ -83,8 +60,38 @@ static const char *verdict_to_str(enum imr_verdict v)
 static const char *payload_base_to_str(enum imr_payload_base p)
 {
 	switch(p) {
-		case IMR_DEST_PORT: return "destination port";
-		case IMR_SRC_PORT:  return "source port";
+		case IMR_DEST_PORT: return "DESTINATION_PORT";
+		case IMR_SRC_PORT:  return "SOURCE_PORT";
+	}
+
+	return "invalid";
+}
+
+/*
+	Convert network_type to string for printing purposes 
+	@param n - network_type to convert 
+	@return String representation of network_type, n
+*/
+static const char *network_to_str(enum network_type n) 
+{
+	switch(n) {
+		case NO_NETWORK: return "NO NETWORK";
+		case NETWORK_IP4: return "IPv4";
+	}
+
+	return "invalid";
+}
+
+/*
+	Convert transport_type to string for printing purposes 
+	@param t - transport_type to convert 
+	@return String representation of transport_type, t
+*/
+static const char *transport_to_str(enum transport_type t) 
+{
+	switch(t) {
+		case NO_TRANSPORT: return "NO TRANSPORT";
+		case TRANSPORT_TCP: return "TCP";
 	}
 
 	return "invalid";
@@ -92,35 +99,36 @@ static const char *payload_base_to_str(enum imr_payload_base p)
 
 /*
 	Convert imr_object_imm to string and print out result  
-	@param fp - file/place to print information to
+	@param logger - file/place to print information to
 	@param o - imr_object with imm attribute to print 
 	@return Return code from fprints
 */
-static int imr_object_print_imm(FILE *fp, const struct imr_object *o)
+static int imr_object_print_imm(FILE *logger, const struct imr_object *o)
 {
 	//Initialize printing 
-	int ret = fprintf(fp, "TYPE_IMMEDIATE (");
+	int ret = fprintf(logger, "TYPE_IMMEDIATE (");
 	if (ret < 0)
 		return ret;
 
 	//Based on object length print out right attribute value
 	switch (o->len) {
 	case sizeof(uint64_t):
-		return fprintf(fp, "0x%16llx)\n", (unsigned long long)o->imm.value64);
+		return fprintf(logger, "0x%16llx)\n", (unsigned long long)o->imm.value64);
 	case sizeof(uint32_t):
-		return fprintf(fp, "0x%08x)\n", (unsigned int)o->imm.value32);
+		return fprintf(logger, "0x%08x)\n", (unsigned int)o->imm.value32);
 	default:
-		return fprintf(fp, "0x%llx (?)\n", (unsigned long long)o->imm.value64);
+		return fprintf(logger, "0x%llx (?)\n", (unsigned long long)o->imm.value64);
 	}
 }
 
 /*
 	Print out an imr_object 
-	@param fp - file/place to print information out to 
+	@param logger - file/place to print information out to 
+	@param depth - depth to print to
 	@param o - imr_object to print 
 	@return Cumulative return code of all the prints to determine if a failure occured
 */
-static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
+static int imr_object_print(FILE *logger, int depth, const struct imr_object *o)
 {
 	//Variable init
 	int ret = 0;
@@ -129,12 +137,12 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 
 	//Print out type 
 	for (i = 0; i < depth; i++) {
-		ret = fprintf(fp, "\t");
+		ret = fprintf(logger, "\t");
 		if (ret < 0)
 			return ret;
 	}
 
-	ret = fprintf(fp, "%s", type_to_str(o->type));
+	ret = fprintf(logger, "%s", type_to_str(o->type));
 	if (ret < 0)
 		return ret;
 
@@ -142,7 +150,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 	switch (o->type) {
 	case IMR_OBJ_TYPE_VERDICT:
 		//Verdict 
-		ret = fprintf(fp, "%s", verdict_to_str(o->verdict.verdict));
+		ret = fprintf(logger, "%s", verdict_to_str(o->verdict.verdict));
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -151,8 +159,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		break;
 	case IMR_OBJ_TYPE_PAYLOAD:
 		//Payload 
-		ret = fprintf(fp, "%s",
-				payload_base_to_str(o->payload.base));
+		ret = fprintf(logger, "%s", payload_base_to_str(o->payload.base));
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -161,7 +168,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		break;
 	case IMR_OBJ_TYPE_IMMEDIATE:
 		//Immediate 
-		ret = imr_object_print_imm(fp, o);
+		ret = imr_object_print_imm(logger, o);
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -172,7 +179,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		//ALU
 		++depth;
 		//Start of print 
-		ret = fprintf(fp, "\n");
+		ret = fprintf(logger, "\n");
 
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
@@ -180,7 +187,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		total += ret;
 
 		//Print left alu object 
-		ret = imr_object_print(fp, depth, o->alu.left);
+		ret = imr_object_print(logger, depth, o->alu.left);
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
@@ -188,15 +195,15 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 
 		//Print ALU op 
 		for (i = 0; i < depth; i++)
-			fprintf(fp, "\n\t");
-		ret = fprintf(fp , "op: %s \n", alu_op_to_str(o->alu.op));
+			fprintf(logger, "\n\t");
+		ret = fprintf(logger, "op: %s \n", alu_op_to_str(o->alu.op));
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
 		total += ret;
 
 		//Print ALU right object 
-		ret = imr_object_print(fp, depth, o->alu.right);
+		ret = imr_object_print(logger, depth, o->alu.right);
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
@@ -207,8 +214,21 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		break;
 	case IMR_OBJ_TYPE_META:
 		//Meta 
-		ret = fprintf(fp , " %s ", meta_to_str(o->meta.key));
+		ret = fprintf(logger, " %s ", meta_to_str(o->meta.key));
 
+		//Don't add to total if print failed, otherwise add to total
+		if (ret < 0)
+			break;
+		total += ret;
+		break;
+	case IMR_OBJ_TYPE_BEGIN:
+		ret = fprintf(logger, "\n\tNETWORK: %s\n", network_to_str(o->beginning.network_layer));
+		//Don't add to total if print failed, otherwise add to total
+		if (ret < 0)
+			break;
+		total += ret;
+
+		ret = fprintf(logger, "\tTRANSPORT: %s\n", transport_to_str(o->beginning.transport_layer));
 		//Don't add to total if print failed, otherwise add to total
 		if (ret < 0)
 			break;
@@ -216,7 +236,7 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 		break;
 	default:
 		//Failure for missing print support
-		perror("Missing print support");
+		fprintf(logger, "Missing print support");
 		exit(EXIT_FAILURE);
 		break;
 	}
@@ -225,23 +245,51 @@ static int imr_object_print(FILE *fp, int depth, const struct imr_object *o)
 }
 
 /*
-	Print out an imr_state 
-	@param fp - file/place to print out to 
-	@param s - imr_state to print 
+	Convert imr_obj_type to string for printing purposes 
+	@param t - imr_obj_type to convert 
+	@return String representation of imr_obj_type parameter, t 
 */
-void imr_state_print(FILE *fp, struct imr_state *s)
+const char *type_to_str(enum imr_obj_type t)
+{
+	switch (t) {
+	case IMR_OBJ_TYPE_NONE: return "NO TYPE ";
+	case IMR_OBJ_TYPE_VERDICT: return "VERDICT ";
+	case IMR_OBJ_TYPE_IMMEDIATE: return "IMM ";
+	case IMR_OBJ_TYPE_PAYLOAD: return "PAYLOAD ";
+	case IMR_OBJ_TYPE_ALU: return "ALU ";
+	case IMR_OBJ_TYPE_META: return "META ";
+	case IMR_OBJ_TYPE_BEGIN: return "BEGIN ";
+	}
+
+	return "unknown";
+}
+
+/*
+	Print out an imr_state 
+	@param logger - file/place to print out to 
+	@param s - imr_state to print 
+	@return Return code of printing
+*/
+int imr_state_print(FILE *logger, struct imr_state *s)
 {
 	//Variable init 
 	int i;
+	int ret = 0;
 
 	//Initial print 
-    fprintf(fp, "Printing IMR\n");
+    ret = fprintf(logger, "Printing IMR\n");
+	if (ret < 0)
+		return ret;
 
 	//Print out each object in state 
 	for (i = 0; i < s->num_objects; i++) {
-		imr_object_print(fp, 0, s->objects[i]);
-		putc('\n', fp);
+		ret = imr_object_print(logger, 0, s->objects[i]);
+		if (ret < 0)
+			return ret;
+		putc('\n', logger);
 	}
+
+	return ret;
 }
 
 /*
@@ -250,7 +298,15 @@ void imr_state_print(FILE *fp, struct imr_state *s)
 */
 struct imr_state *imr_state_alloc(void)
 {
-    return calloc(1, sizeof(struct imr_state));
+    struct imr_state *s = calloc(1, sizeof(struct imr_state));
+
+	if (!s)
+		return NULL;
+
+	//Default values
+	s->verdict = IMR_VERDICT_PASS; 
+
+	return s;
 }
 
 /*
@@ -431,7 +487,7 @@ struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l
 
 	//Don't set ALU with 0 length ojects 
 	if (l->len == 0 || r->len == 0) {
-		fprintf(stderr, "alu op with 0 op length\n");
+		fprintf(logger, "alu op with 0 op length\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -441,6 +497,27 @@ struct imr_object *imr_object_alloc_alu(enum imr_alu_op op, struct imr_object *l
 		o->len = r->len;
 
 	//Return objects
+	return o;
+}
+
+/*
+	Allocate an imr beginning object 
+	@param n - network_type that rule is beginning with
+	@param t - transport_type that rule is beginning with 
+	@return imr_object of type IMR_OBJ_TYPE_BEGIN
+*/
+struct imr_object *imr_object_alloc_beginning(enum network_type n, enum transport_type t)
+{
+	struct imr_object *o = imr_object_alloc(IMR_OBJ_TYPE_BEGIN);
+
+	if (!o)
+		return NULL;
+
+	o->beginning.network_layer = n;
+	o->beginning.transport_layer = t;
+
+	o->len = sizeof(n) + sizeof(t);
+
 	return o;
 }
 
@@ -456,7 +533,7 @@ void imr_object_free(struct imr_object *o)
 
 	//Avoid double free 
 	if (o->refcnt == 0) {
-		perror("double-free, refcnt already zero");
+		fprintf(logger, "double-free for an imr_state, refcnt already zero");
 		o->refcnt--;
 	}
 
@@ -466,6 +543,7 @@ void imr_object_free(struct imr_object *o)
 	case IMR_OBJ_TYPE_IMMEDIATE:
 	case IMR_OBJ_TYPE_PAYLOAD:
 	case IMR_OBJ_TYPE_META:
+	case IMR_OBJ_TYPE_BEGIN:
 		break;
 	case IMR_OBJ_TYPE_ALU:
 		//Free each ALU object 
@@ -482,103 +560,4 @@ void imr_object_free(struct imr_object *o)
 
 	//Free final object 
 	free(o);
-}
-
-//REGISTER OPERATIONS
-/*
-	Registers needed 
-	@param len - length of imr_register space needed 
-	@return Number of registers needed 
-*/
-unsigned int imr_regs_needed(unsigned int len)
-{
-	return div_round_up(len, sizeof(uint64_t));
-}
-
-/*
-	Get the register number to use 
-	@param s - imr_state for doing register operations 
-	@param len - length of imr_register space needed 
-	@return Register number to use 
-*/
-int imr_register_get(const struct imr_state *s, uint32_t len)
-{
-	//Get registers needed 
-	unsigned int regs_needed = imr_regs_needed(len);
-
-	//determine if not enough registers are in use 
-	if (s->regcount < regs_needed) {
-		fprintf(stderr, "not enough registers in use");
-		exit(EXIT_FAILURE);
-	}
-
-	//Return register number
-	return s->regcount - regs_needed;
-}
-
-/*
-	Determine length of bpf register to use 
-	@param len - length of item to determine 
-	@return Type of BPF size register needed
-*/
-int bpf_reg_width(unsigned int len)
-{
-	switch (len) {
-	case sizeof(uint8_t): return BPF_B;
-	case sizeof(uint16_t): return BPF_H;
-	case sizeof(uint32_t): return BPF_W;
-	case sizeof(uint64_t): return BPF_DW;
-	default:
-		fprintf(stderr, "reg size not supported");
-		exit(EXIT_FAILURE);
-	}
-
-	return -EINVAL;
-}
-
-/*
-	allocate registers to keep accurate count 
-	@param s - imr_state to use for register operations 
-	@param len - length of imr_registers needed 
-	@return register count 
-*/
-int imr_register_alloc(struct imr_state *s, uint32_t len)
-{
-	//Determine registers needed
-	unsigned int regs_needed = imr_regs_needed(len);
-
-	//Initialize reg to the current regcount
-	uint8_t reg = s->regcount;
-
-	//Determine if out of bpf registers 
-	if (s->regcount + regs_needed >= IMR_REG_COUNT) {
-		fprintf(stderr, "out of BPF registers");
-		return -1;
-	}
-
-	//Add to regcout the allocated registers 
-	s->regcount += regs_needed;
-
-	//Return new regcount
-	return reg;
-}
-
-/*
-	Release registers 
-	@s - imr_state for register operations 
-	@len - length of imr_registers to release 
-*/
-void imr_register_release(struct imr_state *s, uint32_t len)
-{
-	//Registers needed 
-	unsigned int regs_needed = imr_regs_needed(len);
-
-	//Releasing too many 
-	if (s->regcount < regs_needed) {
-		fprintf(stderr, "regcount underflow");
-		exit(EXIT_FAILURE);
-	}
-
-	//Decrease state's reg count
-	s->regcount -= regs_needed;
-}
+}	

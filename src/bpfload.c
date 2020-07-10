@@ -17,6 +17,8 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include "bpf_insn.h"
 #include "managers/imrManagerXdp.h"
 
+extern FILE *logger; //External logger
+char bpf_log_buf[BPFGEN_LOG_BUF_SIZE]; //Log buffer for bpf program
 /*
 	Placeholder for determining ifindex from name of interface 
 	@param ifname - The name of the interface to convert to number
@@ -58,7 +60,6 @@ static int bpf_prog_load(const struct bpf_prog *prog)
 {
 	//Variable initialization 
 	union bpf_attr attr = {};
-	char *log;
 	int ret;
 
 	attr.prog_type  = prog->type;
@@ -66,19 +67,15 @@ static int bpf_prog_load(const struct bpf_prog *prog)
 	attr.insn_cnt   = prog->len_cur;
 	attr.license    = (uint64_t)("GPL");
 
-	//Set up logging for BPF 
-	log = malloc(8192);
-	attr.log_buf    = (uint64_t)log;
-	attr.log_size   = 8192;
-	attr.log_level  = 1;
-
+	//Set up logging for BPF
+	attr.log_buf   = (uint64_t) &bpf_log_buf;
+	attr.log_size  = BPFGEN_LOG_BUF_SIZE;
+	attr.log_level = 1;
+	
 	//Call the bpf function to call the bpf syscall 
 	ret = bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
-	if (ret < 0)
-		fprintf(/*log_file*/stderr, "bpf errlog: %i - %i - %s - %s\n", ret, errno, strerror(errno), log);
-
-	//Free memory 
-	free(log);
+	if (ret < 0) 
+		fprintf(logger, "bpf errlog: %i - %i - %s - %s\n", ret, errno, strerror(errno), bpf_log_buf);
 
 	return ret;
 }
@@ -103,6 +100,7 @@ static int bpf_load_fd(struct bpf_prog *bprog)
 			break;
 		//bprog->type is not supported 
 		default:
+			fprintf(logger, "bprog->type not yet supported\n");
 			ret = -1;
 			break;
 	}
@@ -128,15 +126,6 @@ int bpfprog_commit(struct bpf_prog *bprog)
 	if (ret > 0)
 		bprog->offloaded = true;
 
-	//Initial load did not work for XDP
-	if (ret < 0 && bprog->type == BPF_PROG_TYPE_XDP) 
-	{
-		//Try with the 0th interface 
-		fprintf(stderr, "Desired ifindex loading not successful. Trying local\n");
-		bprog->ifindex = 0;
-		ret = bpf_prog_load(bprog);
-	}
-
 	//Bpf file loading returned a valid fd, so load the fd 
 	if (ret > 0) {
 		bprog->fd = ret;
@@ -161,10 +150,11 @@ int bpfprog_init(struct bpf_prog *bprog)
 
 	//Default values 
 	bprog->fd = -1;
+	bprog->regcount = 2;
+	bprog->debug = false;
 
 	//Default is XDP
 	bprog->type = BPF_PROG_TYPE_XDP;
-	bprog->verdict = XDP_PASS;
 
 	return 0;
 }
@@ -177,4 +167,103 @@ void bpfprog_destroy(struct bpf_prog *bprog)
 {
 	free(bprog->img);
 	close(bprog->fd);
+}
+
+//REGISTER OPERATIONS
+/*
+	Registers needed 
+	@param len - length of imr_register space needed 
+	@return Number of registers needed 
+*/
+unsigned int bpf_regs_needed(unsigned int len)
+{
+	return div_round_up(len, sizeof(uint64_t));
+}
+
+/*
+	Get the register number to use 
+	@param bprog - bpf_prog for doing register operations 
+	@param len - length of imr_register space needed 
+	@return Register number to use 
+*/
+int bpf_register_get(const struct bpf_prog *bprog, uint32_t len)
+{
+	//Get registers needed 
+	unsigned int regs_needed = bpf_regs_needed(len);
+
+	//determine if not enough registers are in use 
+	if (bprog->regcount < regs_needed) {
+		fprintf(logger, "not enough registers in use\n");
+		exit(EXIT_FAILURE);
+	}
+
+	//Return register number
+	return bprog->regcount - regs_needed;
+}
+
+/*
+	Determine length of bpf register to use 
+	@param len - length of item to determine 
+	@return Type of BPF size register needed
+*/
+int bpf_reg_width(unsigned int len)
+{
+	switch (len) {
+	case sizeof(uint8_t): return BPF_B;
+	case sizeof(uint16_t): return BPF_H;
+	case sizeof(uint32_t): return BPF_W;
+	case sizeof(uint64_t): return BPF_DW;
+	default:
+		fprintf(logger, "reg size not supported");
+		exit(EXIT_FAILURE);
+	}
+
+	return -EINVAL;
+}
+
+/*
+	allocate registers to keep accurate count 
+	@param s - imr_state to use for register operations 
+	@param len - length of imr_registers needed 
+	@return register count 
+*/
+int bpf_register_alloc(struct bpf_prog *bprog, uint32_t len)
+{
+	//Determine registers needed
+	unsigned int regs_needed = bpf_regs_needed(len);
+
+	//Initialize reg to the current regcount
+	uint8_t reg = bprog->regcount;
+
+	//Determine if out of bpf registers 
+	if (bprog->regcount + regs_needed >= IMR_REG_COUNT) {
+		fprintf(logger, "out of BPF registers");
+		return -1;
+	}
+
+	//Add to regcout the allocated registers 
+	bprog->regcount += regs_needed;
+
+	//Return new regcount
+	return reg;
+}
+
+/*
+	Release registers 
+	@s - imr_state for register operations 
+	@len - length of imr_registers to release 
+*/
+void bpf_register_release(struct bpf_prog *bprog, uint32_t len)
+{
+	//Registers needed 
+	unsigned int regs_needed = bpf_regs_needed(len);
+
+	//Releasing too many 
+	if (bprog->regcount < regs_needed) {
+		fprintf(logger, "regcount underflow");
+		exit(EXIT_FAILURE);
+	}
+
+	//Decrease state's reg count
+	bprog->regcount -= regs_needed;
 }

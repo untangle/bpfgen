@@ -1,0 +1,22 @@
+
+[{
+    "family-name": "inet",
+    "table-name": "access",
+    "firewall-hook": "input",
+    "chain-name": "access-rules",
+    "rules": [
+        {
+            "type": 0,
+            "action": 3,
+            "conditions": {
+                "network_layer": 1,
+                "transport_layer": 1,
+                "op": 0,
+                "payload": 0,
+                "immediate": 80,
+                "src-interface": 2
+            },
+            "id": 5
+        }
+    ]
+}]

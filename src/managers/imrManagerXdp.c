@@ -16,6 +16,7 @@ typedef __u16 __bitwise __sum16; /* hack */
 #include "imrManagerXdp.h"
 #include "../bpf_insn.h"
 
+extern FILE *logger; //Bpfgen logger
 /*
 	NOTE: function taken from linux BPF sample's directory 
 	Load the BPF file descriptor into the XDP layer of the given interface 
@@ -43,12 +44,12 @@ static int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
 
 	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 	if (sock < 0) {
-		printf("open netlink socket: %s\n", strerror(errno));
+		fprintf(logger, "open netlink socket: %s\n", strerror(errno));
 		return -1;
 	}
 
 	if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		printf("bind to netlink: %s\n", strerror(errno));
+		fprintf(logger, "bind to netlink: %s\n", strerror(errno));
 		goto cleanup;
 	}
 
@@ -86,25 +87,25 @@ static int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
 	req.nh.nlmsg_len += NLA_ALIGN(nla->nla_len);
 
 	if (send(sock, &req, req.nh.nlmsg_len, 0) < 0) {
-		printf("send to netlink: %s\n", strerror(errno));
+		fprintf(logger, "send to netlink: %s\n", strerror(errno));
 		goto cleanup;
 	}
 
 	len = recv(sock, buf, sizeof(buf), 0);
 	if (len < 0) {
-		printf("recv from netlink: %s\n", strerror(errno));
+		fprintf(logger, "recv from netlink: %s\n", strerror(errno));
 		goto cleanup;
 	}
 
 	for (nh = (struct nlmsghdr *)buf; NLMSG_OK(nh, len);
 	     nh = NLMSG_NEXT(nh, len)) {
 		if (nh->nlmsg_pid != getpid()) {
-			printf("Wrong pid %d, expected %d\n",
+			fprintf(logger, "Wrong pid %d, expected %d\n",
 			       nh->nlmsg_pid, getpid());
 			goto cleanup;
 		}
 		if (nh->nlmsg_seq != seq) {
-			printf("Wrong seq %d, expected %d\n",
+			fprintf(logger, "Wrong seq %d, expected %d\n",
 			       nh->nlmsg_seq, seq);
 			goto cleanup;
 		}
@@ -113,7 +114,7 @@ static int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
 			err = (struct nlmsgerr *)NLMSG_DATA(nh);
 			if (!err->error)
 				continue;
-			printf("nlmsg error %s\n", strerror(-err->error));
+			fprintf(logger, "nlmsg error %s\n", strerror(-err->error));
 			goto cleanup;
 		case NLMSG_DONE:
 			break;
@@ -158,12 +159,14 @@ int xdp_imr_jit_prologue(struct bpf_prog *bprog, struct imr_state *state)
 
 	//XDP link layer, ethernet only for now 
 	switch(state->link_layer) {
+		case NO_LINK:
+			break;
 		case LINK_ETHERNET:
 			EMIT(bprog, BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, ETH_HLEN));
 			EMIT(bprog, BPF_JMP_REG(BPF_JLE, BPF_REG_1, BPF_REG_3, 2)); 
 			break;
 		default:
-			fprintf(stderr, "Unsupported XDP link type");
+			fprintf(logger, "error: Unsupported XDP link type");
 			ret = -1;
 			break;
 	}   
@@ -195,7 +198,7 @@ int xdp_imr_jit_obj_verdict(int imr_verdict)
 		verdict = XDP_DROP;
 		break;
 	default:
-		fprintf(stderr, "unhandled verdict");
+		fprintf(stderr, "error: unhandled xdp verdict\n");
 		exit(EXIT_FAILURE);
 	}
 
