@@ -24,27 +24,21 @@ static int imr_jit_verdict(struct bpf_prog *bprog, int verdict)
 	return 0;
 }
 
-/*
-	JIT the final verdict in a bpf prog
-	@param bprog - bpf program to add to 
-	@param verdict - final veerdict to add to
-	@return Return code of jitting the verdict
-*/
-static int imr_jit_end_verdict(struct bpf_prog *bprog, int verdict) 
+static int imr_verdict_to_bpf_verdict(int imr_verdict, enum bpf_prog_type bprog_type) 
 {
+	int verdict = -1;
+
 	//Switch the hook type and get what the BPF verdict will be
 	//based on the type 
-	switch (bprog->type) {
+	switch (bprog_type) {
 	case BPF_PROG_TYPE_XDP: 
-		verdict = xdp_imr_jit_obj_verdict(verdict);
+		verdict = xdp_imr_jit_obj_verdict(imr_verdict);
 		break;
 	default:
-		fprintf(logger, "Unsupported type for IMR_VERDICT");
-		exit(EXIT_FAILURE);
+		fprintf(logger, "Unsupported type for IMR_VERDICT\n");
 	}
 
-	//JIT the verdict 
-	return imr_jit_verdict(bprog, verdict);
+	return verdict;
 }
 
 /*
@@ -61,16 +55,7 @@ static int imr_jit_obj_verdict(struct bpf_prog *bprog, const struct imr_object *
 	int imr_verdict = o->verdict.verdict;
 	int verdict = -1;
 
-	//Switch the hook type and get what the BPF verdict will be
-	//based on the type 
-	switch (bprog->type) {
-	case BPF_PROG_TYPE_XDP: 
-		verdict = xdp_imr_jit_obj_verdict(imr_verdict);
-		break;
-	default:
-		fprintf(logger, "rule %i object %i: Unsupported type for IMR_VERDICT\n", rule_id, object_id);
-		exit(EXIT_FAILURE);
-	}
+	verdict = imr_verdict_to_bpf_verdict(imr_verdict, bprog->type);
 
 	//If verdict jitting failed, log and return failure
 	if (verdict < 0) {
@@ -859,7 +844,7 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 	}
 
 	//Verdict from state
-	bprog.verdict = s->verdict;
+	bprog.verdict = imr_verdict_to_bpf_verdict(s->verdict, bprog.type);
 
 	//Debug for bprog
 	bprog.debug = debug;
@@ -904,14 +889,14 @@ int imr_do_bpf(struct imr_state *s, bool debug)
 	}
 
 	//Add a bpf verdict and fail if verdict failed
-	ret = imr_jit_end_verdict(&bprog, bprog.verdict);
+	ret = imr_jit_verdict(&bprog, bprog.verdict);
 	if (ret < 0) {
 		fprintf(logger, "Error generating bpf program verdict\n");
 		return ret;
 	}
 
 	//HERE select interface 
-	bprog.ifindex = 5;
+	bprog.ifindex = 2;
 
 	//Commit the bpf program into a fd to be loaded 
 	ret = bpfprog_commit(&bprog);
