@@ -1,0 +1,25 @@
+FROM alpine:3.12
+LABEL maintainer="Sebastien Delafond <sdelafond@gmail.com>"
+
+RUN apk update
+RUN apk add --update gcc musl-dev
+
+# build deps
+RUN apk add libnfnetlink-dev
+RUN apk add libmnl-dev
+RUN apk add linux-headers
+RUN apk add jansson-dev
+RUN apk add make
+RUN apk add autoconf
+RUN apk add automake
+RUN apk add libtool
+RUN apk add git
+
+# cwd
+ENV SRC=/opt/untangle/bpfgen
+RUN mkdir -p ${SRC}
+VOLUME ${SRC}
+
+# build bpfgen
+WORKDIR ${SRC}
+CMD autoreconf -fis && ./configure && make

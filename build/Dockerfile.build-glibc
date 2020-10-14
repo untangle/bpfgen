@@ -1,0 +1,31 @@
+FROM debian:buster
+LABEL maintainer="Sebastien Delafond <sdelafond@gmail.com>"
+
+USER root
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN echo 'APT::Install-Recommends "false";' > /etc/apt/apt.conf.d/no-recommends && \
+    echo 'APT::Install-Suggests "false";' >> /etc/apt/apt.conf.d/no-recommends
+
+RUN apt update
+RUN apt install --yes build-essential
+RUN apt install --yes debhelper
+RUN apt install --yes cmake
+RUN apt install --yes libnfnetlink-dev
+RUN apt install --yes libmnl-dev
+RUN apt install --yes linux-headers-amd64
+RUN apt install --yes libjansson-dev
+RUN apt install --yes make
+RUN apt install --yes autoconf
+RUN apt install --yes automake
+RUN apt install --yes libtool
+RUN apt install --yes git
+
+# cwd
+ENV SRC=/opt/untangle/bpfgen
+RUN mkdir -p ${SRC}
+VOLUME ${SRC}
+
+# build bpfgen
+WORKDIR ${SRC}
+CMD autoreconf -fis && ./configure && make

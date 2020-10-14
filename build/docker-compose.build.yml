@@ -1,0 +1,29 @@
+version: '2'
+services:
+    musl:
+      image: untangleinc/bpfgen:build-musl
+      volumes:
+        - ..:/opt/untangle/bpfgen
+
+    glibc:
+      image: untangleinc/bpfgen:build-glibc
+      volumes:
+        - ..:/opt/untangle/bpfgen
+
+    # the next 2 services allow for local changes and tests to the
+    # docker images, before pushing new official ones to GitHub: the
+    # build images are being built locally
+
+    musl-local:
+      build:
+        context: .
+        dockerfile: Dockerfile.build-musl
+      volumes:
+        - ..:/opt/untangle/bpfgen
+
+    glibc-local:
+      build:
+        context: .
+        dockerfile: Dockerfile.build-glibc
+      volumes:
+        - ..:/opt/untangle/bpfgen
